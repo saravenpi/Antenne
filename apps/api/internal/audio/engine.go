@@ -23,15 +23,32 @@ type NowPlaying struct {
 type Engine struct {
 	Playlist *Playlist
 	Live     *LiveSource
+	Clips    *ClipBuffer
 	encoder  *HLSEncoder
 
 	fadeFrames int     // frames over which to fade between sources
 	gain       float64 // current playlist gain (1 = full, 0 = fully ducked)
 
+	timelineMu sync.Mutex
+	timeline   []timelineEntry
+	lastID     string // last observed playlist item ID (for change detection)
+
 	listeners int64
 	stop      chan struct{}
 	once      sync.Once
 }
+
+// timelineEntry records when a track began broadcasting (engine head time), so
+// now-playing can be resolved by the listener's wall-clock accounting for HLS
+// buffering delay.
+type timelineEntry struct {
+	At      time.Time
+	TrackID string
+	Title   string
+	Artist  string
+}
+
+const maxTimelineEntries = 300
 
 // NewEngine wires the sources and encoder together.
 func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int) *Engine {
@@ -42,6 +59,7 @@ func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int)
 	return &Engine{
 		Playlist:   pl,
 		Live:       live,
+		Clips:      NewClipBuffer(),
 		encoder:    enc,
 		fadeFrames: fade,
 		gain:       1.0,
@@ -96,6 +114,9 @@ func (e *Engine) loop() {
 				frame = scaleFrame(e.Playlist.ReadFrame(), e.gain)
 			}
 
+			e.recordTimeline()
+			e.Clips.Write(frame)
+
 			if err := e.encoder.Write(frame); err != nil {
 				log.Printf("engine: encoder write failed: %v", err)
 				return
@@ -116,6 +137,58 @@ func (e *Engine) NowPlaying() NowPlaying {
 		np.TrackID = item.ID
 	}
 	return np
+}
+
+// recordTimeline appends a timeline entry whenever the playing item changes.
+func (e *Engine) recordTimeline() {
+	item, ok := e.Playlist.Current()
+	if !ok || item.ID == "" {
+		return
+	}
+	if item.ID == e.lastID {
+		return
+	}
+	e.lastID = item.ID
+
+	e.timelineMu.Lock()
+	e.timeline = append(e.timeline, timelineEntry{
+		At:      time.Now(),
+		TrackID: item.ID,
+		Title:   item.Title,
+		Artist:  item.Artist,
+	})
+	if len(e.timeline) > maxTimelineEntries {
+		e.timeline = e.timeline[len(e.timeline)-maxTimelineEntries:]
+	}
+	e.timelineMu.Unlock()
+}
+
+// NowPlayingAt resolves what was broadcasting at wall-clock time t: the entry
+// with the greatest At <= t. Returns ok=false when there is no such entry.
+func (e *Engine) NowPlayingAt(t time.Time) (title, artist, trackID string, ok bool) {
+	e.timelineMu.Lock()
+	defer e.timelineMu.Unlock()
+	for i := len(e.timeline) - 1; i >= 0; i-- {
+		if !e.timeline[i].At.After(t) {
+			en := e.timeline[i]
+			return en.Title, en.Artist, en.TrackID, true
+		}
+	}
+	return "", "", "", false
+}
+
+// NextItem returns the upcoming playlist item.
+func (e *Engine) NextItem() (title, artist, trackID string, ok bool) {
+	item, ok := e.Playlist.Next()
+	if !ok {
+		return "", "", "", false
+	}
+	return item.Title, item.Artist, item.ID, true
+}
+
+// ExtractClipPCM returns the last N seconds of buffered mixed PCM.
+func (e *Engine) ExtractClipPCM(seconds int) []byte {
+	return e.Clips.Extract(seconds)
 }
 
 // AddListener / RemoveListener track the live audience count (called when HLS

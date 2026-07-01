@@ -19,7 +19,15 @@ func Open(cfg config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := gdb.AutoMigrate(&models.Admin{}, &models.Track{}, &models.Settings{}); err != nil {
+	if err := gdb.AutoMigrate(
+		&models.Admin{},
+		&models.Track{},
+		&models.Settings{},
+		&models.Clip{},
+		&models.ChatMessage{},
+		&models.Ban{},
+		&models.Restriction{},
+	); err != nil {
 		return nil, err
 	}
 
@@ -38,7 +46,7 @@ func seedSettings(gdb *gorm.DB) error {
 	if count > 0 {
 		return nil
 	}
-	return gdb.Create(&models.Settings{StationName: "Antenne", CrossfadeMs: 2000}).Error
+	return gdb.Create(&models.Settings{StationName: "Antenne", CrossfadeMs: 2000, SlowModeSec: 2}).Error
 }
 
 func seedAdmin(gdb *gorm.DB, cfg config.Config) error {

@@ -56,6 +56,17 @@ func (p *Playlist) Current() (Item, bool) {
 	return p.items[p.index%len(p.items)], true
 }
 
+// Next returns the upcoming item (wrapping to the top), or false when the
+// playlist is empty.
+func (p *Playlist) Next() (Item, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.items) == 0 {
+		return Item{}, false
+	}
+	return p.items[(p.index+1)%len(p.items)], true
+}
+
 // ReadFrame returns the next 20 ms PCM frame, advancing tracks and looping as
 // needed. It returns a silence frame when the playlist is empty.
 func (p *Playlist) ReadFrame() []byte {

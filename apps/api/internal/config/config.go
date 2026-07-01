@@ -21,6 +21,7 @@ type Config struct {
 
 	StorageDir string
 	StreamDir  string
+	ClipsDir   string
 
 	FFmpegBin   string
 	CrossfadeMs int
@@ -42,9 +43,10 @@ func Load() Config {
 		AdminPassword: env("ADMIN_PASSWORD", "admin"),
 		StorageDir:    env("STORAGE_DIR", "./data/tracks"),
 		StreamDir:     env("STREAM_DIR", "./data/stream"),
+		ClipsDir:      env("CLIPS_DIR", "./data/clips"),
 		FFmpegBin:     env("FFMPEG_BIN", "ffmpeg"),
 		CrossfadeMs:   envInt("CROSSFADE_MS", 2000),
-		HLSSegmentS:   envInt("HLS_SEGMENT_SEC", 4),
+		HLSSegmentS:   envInt("HLS_SEGMENT_SEC", 3),
 		HLSListSize:   envInt("HLS_LIST_SIZE", 6),
 	}
 	return c

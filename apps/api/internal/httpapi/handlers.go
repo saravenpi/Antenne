@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -43,8 +45,48 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // --- Now playing (public) ---
 
+type nowPlayingItem struct {
+	Title   string `json:"title"`
+	Artist  string `json:"artist"`
+	TrackID string `json:"trackId"`
+}
+
+type nowPlayingResp struct {
+	Live      bool            `json:"live"`
+	Title     string          `json:"title"`
+	Artist    string          `json:"artist"`
+	TrackID   string          `json:"trackId"`
+	Listeners int64           `json:"listeners"`
+	Next      *nowPlayingItem `json:"next"`
+}
+
 func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.engine.NowPlaying())
+	np := s.engine.NowPlaying()
+	resp := nowPlayingResp{
+		Live:      np.Live,
+		Title:     np.Title,
+		Artist:    np.Artist,
+		TrackID:   np.TrackID,
+		Listeners: np.Listeners,
+	}
+
+	// Optional wall-clock resolution: `at` is unix millis of the listener's
+	// playback position, accounting for HLS buffering delay.
+	if atStr := r.URL.Query().Get("at"); atStr != "" {
+		if at, err := strconv.ParseInt(atStr, 10, 64); err == nil && at > 0 {
+			if title, artist, trackID, ok := s.engine.NowPlayingAt(time.UnixMilli(at)); ok {
+				resp.Title = title
+				resp.Artist = artist
+				resp.TrackID = trackID
+			}
+		}
+	}
+
+	if title, artist, trackID, ok := s.engine.NextItem(); ok {
+		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Tracks ---

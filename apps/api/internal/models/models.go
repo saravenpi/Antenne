@@ -47,4 +47,71 @@ type Settings struct {
 	StationName string `gorm:"default:'Antenne'" json:"stationName"`
 	Shuffle     bool   `json:"shuffle"`
 	CrossfadeMs int    `gorm:"default:2000" json:"crossfadeMs"`
+	// BannedWords is stored as a newline-separated list; expose the parsed slice
+	// via BannedWordsList.
+	BannedWords string `json:"-"`
+	SlowModeSec int    `gorm:"default:2" json:"slowModeSec"`
+}
+
+// Clip is a recorded slice of the live broadcast, encoded to MP3.
+type Clip struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Title       string    `json:"title"`
+	Filename    string    `gorm:"not null" json:"-"` // <uuid>.mp3 under ClipsDir
+	DurationSec float64   `json:"durationSec"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+func (c *Clip) BeforeCreate(*gorm.DB) error {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
+	}
+	return nil
+}
+
+// ChatMessage is a single live-chat message. IP is kept server-side only.
+type ChatMessage struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name      string    `json:"name"`
+	Body      string    `json:"body"`
+	IP        string    `json:"-"`
+	Deleted   bool      `json:"-"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (m *ChatMessage) BeforeCreate(*gorm.DB) error {
+	if m.ID == uuid.Nil {
+		m.ID = uuid.New()
+	}
+	return nil
+}
+
+// Ban blocks an IP from posting to the chat entirely.
+type Ban struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	IP        string    `gorm:"uniqueIndex" json:"ip"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (b *Ban) BeforeCreate(*gorm.DB) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	return nil
+}
+
+// Restriction shadow-bans an IP: their messages are echoed back to them only.
+type Restriction struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	IP        string    `gorm:"uniqueIndex" json:"ip"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (r *Restriction) BeforeCreate(*gorm.DB) error {
+	if r.ID == uuid.Nil {
+		r.ID = uuid.New()
+	}
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/saravenpi/antenne/internal/audio"
 	"github.com/saravenpi/antenne/internal/auth"
+	"github.com/saravenpi/antenne/internal/clips"
 	"github.com/saravenpi/antenne/internal/config"
 	"github.com/saravenpi/antenne/internal/db"
 	"github.com/saravenpi/antenne/internal/httpapi"
@@ -25,6 +26,11 @@ func main() {
 		log.Fatalf("store: %v", err)
 	}
 
+	clipsSvc, err := clips.New(cfg.ClipsDir, cfg.FFmpegBin)
+	if err != nil {
+		log.Fatalf("clips: %v", err)
+	}
+
 	// Audio engine: playlist + live source -> mixer -> HLS encoder.
 	playlist := audio.NewPlaylist(cfg.FFmpegBin)
 	live := audio.NewLiveSource(cfg.FFmpegBin)
@@ -32,7 +38,7 @@ func main() {
 	engine := audio.NewEngine(playlist, live, encoder, cfg.CrossfadeMs)
 
 	authSvc := auth.New(cfg.JWTSecret)
-	srv := httpapi.NewServer(cfg, database, authSvc, st, engine)
+	srv := httpapi.NewServer(cfg, database, authSvc, st, clipsSvc, engine)
 
 	if err := srv.SyncPlaylist(); err != nil {
 		log.Fatalf("playlist sync: %v", err)

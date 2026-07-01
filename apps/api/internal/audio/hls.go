@@ -43,7 +43,7 @@ func (h *HLSEncoder) Start() error {
 		"-f", "hls",
 		"-hls_time", strconv.Itoa(h.segmentS),
 		"-hls_list_size", strconv.Itoa(h.listSize),
-		"-hls_flags", "delete_segments+append_list+omit_endlist",
+		"-hls_flags", "delete_segments+append_list+omit_endlist+program_date_time",
 		"-hls_segment_filename", filepath.Join(h.dir, "seg_%05d.ts"),
 		h.Playlist(),
 	)

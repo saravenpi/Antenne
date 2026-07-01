@@ -39,7 +39,7 @@ func (s *Server) coverURLFor(trackID string) string {
 	if err := s.db.Select("id", "cover").First(&t, "id = ?", trackID).Error; err != nil || t.Cover == "" {
 		return ""
 	}
-	return "/api/tracks/" + trackID + "/cover"
+	return trackCoverURL(t.ID, t.Cover)
 }
 
 // currentNowPlaying builds the live snapshot (no wall-clock override).

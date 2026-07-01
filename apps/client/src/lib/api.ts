@@ -141,6 +141,18 @@ export const api = {
 	// ---- Tracks / playlist ----
 	tracks: () => req<Track[]>('/tracks'),
 	rescanMetadata: () => req<Track[]>('/tracks/rescan', { method: 'POST' }),
+	updateTrack: (id: string, data: { title?: string; artist?: string }) =>
+		req<Track>(`/tracks/${id}`, jsonBody('PATCH', data)),
+	async uploadCover(id: string, file: File): Promise<Track> {
+		const form = new FormData();
+		form.set('file', file);
+		const headers = new Headers();
+		const token = getToken();
+		if (token) headers.set('Authorization', `Bearer ${token}`);
+		const res = await fetch(`/api/tracks/${id}/cover`, { method: 'POST', headers, body: form });
+		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'upload failed');
+		return res.json();
+	},
 	deleteTrack: (id: string) => req<void>(`/tracks/${id}`, { method: 'DELETE' }),
 	reorder: (order: string[]) => req<{ status: string }>('/playlist', jsonBody('PUT', { order })),
 	async upload(file: File, title: string, artist: string, collectionId?: string): Promise<Track> {

@@ -11,12 +11,25 @@ import (
 	"github.com/saravenpi/antenne/internal/models"
 )
 
+// trackCoverURL builds the public cover URL for a track, or "" when it has no
+// art. It appends a short version token derived from the cover filename so that
+// replacing a cover (which writes a fresh filename) busts the browser/CDN cache
+// even though the path is stable.
+func trackCoverURL(id uuid.UUID, cover string) string {
+	if cover == "" {
+		return ""
+	}
+	v := strings.TrimSuffix(cover, filepath.Ext(cover))
+	if len(v) > 8 {
+		v = v[len(v)-8:]
+	}
+	return "/api/tracks/" + id.String() + "/cover?v=" + v
+}
+
 // decorateTracks fills the transient CoverURL on tracks that have art.
 func decorateTracks(tracks []models.Track) {
 	for i := range tracks {
-		if tracks[i].Cover != "" {
-			tracks[i].CoverURL = "/api/tracks/" + tracks[i].ID.String() + "/cover"
-		}
+		tracks[i].CoverURL = trackCoverURL(tracks[i].ID, tracks[i].Cover)
 	}
 }
 
@@ -114,10 +127,114 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.SyncPlaylist()
-	if track.Cover != "" {
-		track.CoverURL = "/api/tracks/" + track.ID.String() + "/cover"
-	}
+	track.CoverURL = trackCoverURL(track.ID, track.Cover)
 	writeJSON(w, http.StatusCreated, track)
+}
+
+// updateTrackReq patches a track's editable metadata. Pointers distinguish
+// "not provided" from "set to empty".
+type updateTrackReq struct {
+	Title  *string `json:"title"`
+	Artist *string `json:"artist"`
+}
+
+// handleUpdateTrack edits a track's title/artist after upload (e.g. for files
+// with missing or wrong tags).
+func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var req updateTrackReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	var track models.Track
+	if err := s.db.First(&track, "id = ?", id).Error; err != nil {
+		if db.IsNotFound(err) {
+			writeErr(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	updates := map[string]any{}
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			writeErr(w, http.StatusBadRequest, "title required")
+			return
+		}
+		updates["title"] = title
+		track.Title = title
+	}
+	if req.Artist != nil {
+		artist := strings.TrimSpace(*req.Artist)
+		updates["artist"] = artist
+		track.Artist = artist
+	}
+	if len(updates) > 0 {
+		if err := s.db.Model(&models.Track{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			writeErr(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		_ = s.SyncPlaylist()
+	}
+	track.CoverURL = trackCoverURL(track.ID, track.Cover)
+	writeJSON(w, http.StatusOK, track)
+}
+
+// handleUploadCover replaces a track's cover art with an uploaded image, so
+// tracks without embedded art (or with the wrong art) can get a proper cover.
+func (s *Server) handleUploadCover(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var track models.Track
+	if err := s.db.First(&track, "id = ?", id).Error; err != nil {
+		if db.IsNotFound(err) {
+			writeErr(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if err := r.ParseMultipartForm(16 << 20); err != nil { // covers are small
+		writeErr(w, http.StatusBadRequest, "invalid upload")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "missing file")
+		return
+	}
+	defer file.Close()
+
+	name := header.Filename
+	if filepath.Ext(name) == "" {
+		name = "cover.jpg"
+	}
+	cover, err := s.store.Save(file, name)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not store cover")
+		return
+	}
+	old := track.Cover
+	if err := s.db.Model(&models.Track{}).Where("id = ?", id).Update("cover", cover).Error; err != nil {
+		_ = s.store.Delete(cover)
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if old != "" && old != cover {
+		_ = s.store.Delete(old)
+	}
+	track.Cover = cover
+	track.CoverURL = trackCoverURL(track.ID, track.Cover)
+	writeJSON(w, http.StatusOK, track)
 }
 
 func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {

@@ -45,6 +45,104 @@
 
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 
+	// ---- Edit track (title / artist / cover) ----
+	let editing = $state<Track | null>(null);
+	let editTitle = $state('');
+	let editArtist = $state('');
+	let editCoverFile = $state<File | null>(null);
+	let editCoverPreview = $state('');
+	let editBusy = $state(false);
+	let editError = $state('');
+	let editDragOver = $state(false);
+
+	function openEdit(track: Track) {
+		editing = track;
+		editTitle = track.title;
+		editArtist = track.artist ?? '';
+		editCoverFile = null;
+		editError = '';
+		if (editCoverPreview) URL.revokeObjectURL(editCoverPreview);
+		editCoverPreview = '';
+	}
+
+	function closeEdit() {
+		if (editCoverPreview) URL.revokeObjectURL(editCoverPreview);
+		editCoverPreview = '';
+		editing = null;
+		editCoverFile = null;
+	}
+
+	// Downscale an image to a small JPEG File so covers stay light.
+	function downscaleToFile(file: File, max: number): Promise<File> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+			reader.onload = () => {
+				const img = new Image();
+				img.onerror = () => reject(new Error('Image illisible'));
+				img.onload = () => {
+					const scale = Math.min(1, max / Math.max(img.width, img.height));
+					const width = Math.round(img.width * scale);
+					const height = Math.round(img.height * scale);
+					const canvas = document.createElement('canvas');
+					canvas.width = width;
+					canvas.height = height;
+					const ctx = canvas.getContext('2d');
+					if (!ctx) return reject(new Error('Canvas indisponible'));
+					ctx.drawImage(img, 0, 0, width, height);
+					canvas.toBlob(
+						(blob) => {
+							if (!blob) return reject(new Error('Encodage impossible'));
+							resolve(new File([blob], 'cover.jpg', { type: 'image/jpeg' }));
+						},
+						'image/jpeg',
+						0.85
+					);
+				};
+				img.src = reader.result as string;
+			};
+			reader.readAsDataURL(file);
+		});
+	}
+
+	async function pickCover(file: File | undefined | null) {
+		if (!file || !file.type.startsWith('image/')) {
+			editError = 'Fichier image attendu';
+			return;
+		}
+		editError = '';
+		try {
+			const small = await downscaleToFile(file, 600);
+			editCoverFile = small;
+			if (editCoverPreview) URL.revokeObjectURL(editCoverPreview);
+			editCoverPreview = URL.createObjectURL(small);
+		} catch (e) {
+			editError = e instanceof Error ? e.message : 'Image illisible';
+		}
+	}
+
+	async function saveEdit() {
+		if (!editing) return;
+		const title = editTitle.trim();
+		if (!title) {
+			editError = 'Le titre est requis';
+			return;
+		}
+		editBusy = true;
+		editError = '';
+		try {
+			let updated = await api.updateTrack(editing.id, { title, artist: editArtist.trim() });
+			if (editCoverFile) updated = await api.uploadCover(editing.id, editCoverFile);
+			tracks = tracks.map((t) => (t.id === updated.id ? updated : t));
+			await loadNowPlaying();
+			closeEdit();
+		} catch (e) {
+			editError = e instanceof Error ? e.message : 'Enregistrement impossible';
+		} finally {
+			editBusy = false;
+		}
+	}
+
 	async function loadTracks() {
 		try {
 			tracks = await api.tracks();
@@ -674,6 +772,16 @@
 							variant="ghost"
 							size="icon"
 							class="h-8 w-8"
+							aria-label="Modifier {track.title}"
+							title="Modifier le titre, l'artiste, la cover"
+							onclick={() => openEdit(track)}
+						>
+							<Icon icon="lucide:pencil" width={16} />
+						</Button>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-8 w-8"
 							disabled={i === 0}
 							onclick={() => move(i, -1)}
 						>
@@ -702,6 +810,112 @@
 		</div>
 	{/if}
 </div>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === 'Escape' && editing) closeEdit();
+	}}
+/>
+
+{#if editing}
+	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+		<button
+			type="button"
+			class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+			aria-label="Fermer"
+			onclick={closeEdit}
+		></button>
+		<div class="relative z-10 w-full max-w-md">
+			<Card class="flex flex-col gap-4">
+				<div class="flex items-center justify-between">
+					<h2 class="flex items-center gap-2 text-base font-semibold text-[var(--color-foreground)]">
+						<Icon icon="lucide:pencil" width={18} /> Modifier le son
+					</h2>
+					<Button variant="ghost" size="icon" class="h-8 w-8" aria-label="Fermer" onclick={closeEdit}>
+						<Icon icon="lucide:x" width={18} />
+					</Button>
+				</div>
+
+				<div class="flex gap-4">
+					<!-- Cover dropzone -->
+					<label
+						ondragover={(e) => {
+							e.preventDefault();
+							editDragOver = true;
+						}}
+						ondragleave={() => (editDragOver = false)}
+						ondrop={(e) => {
+							e.preventDefault();
+							editDragOver = false;
+							pickCover(e.dataTransfer?.files?.[0]);
+						}}
+						class="group relative flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-dashed bg-[var(--color-muted)] transition {editDragOver
+							? 'border-[var(--color-foreground)]/40'
+							: 'border-[var(--color-border)]'}"
+						title="Changer la cover"
+					>
+						{#if editCoverPreview || editing.coverUrl}
+							<img
+								src={editCoverPreview || editing.coverUrl || ''}
+								alt=""
+								class="h-full w-full object-cover"
+							/>
+							<span
+								class="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition group-hover:opacity-100"
+							>
+								<Icon icon="lucide:image-plus" width={22} />
+							</span>
+						{:else}
+							<span class="flex flex-col items-center gap-1 text-[var(--color-muted-foreground)]">
+								<Icon icon="lucide:image-plus" width={22} />
+								<span class="text-[11px]">Cover</span>
+							</span>
+						{/if}
+						<input
+							type="file"
+							accept="image/*"
+							class="sr-only"
+							onchange={(e) => pickCover((e.currentTarget as HTMLInputElement).files?.[0])}
+						/>
+					</label>
+
+					<div class="flex min-w-0 flex-1 flex-col gap-3">
+						<div>
+							<label for="edit-title" class="mb-1 block text-xs font-medium text-[var(--color-muted-foreground)]">
+								Titre
+							</label>
+							<Input id="edit-title" bind:value={editTitle} placeholder="Titre du son" />
+						</div>
+						<div>
+							<label for="edit-artist" class="mb-1 block text-xs font-medium text-[var(--color-muted-foreground)]">
+								Artiste
+							</label>
+							<Input id="edit-artist" bind:value={editArtist} placeholder="Artiste" />
+						</div>
+					</div>
+				</div>
+
+				<p class="text-xs text-[var(--color-muted-foreground)]">
+					Glisse une image sur la cover ou clique dessus pour la remplacer.
+				</p>
+
+				{#if editError}
+					<p class="text-sm text-red-500">{editError}</p>
+				{/if}
+
+				<div class="flex justify-end gap-2">
+					<Button variant="outline" onclick={closeEdit} disabled={editBusy}>
+						<Icon icon="lucide:x" width={16} /> Annuler
+					</Button>
+					<Button onclick={saveEdit} disabled={editBusy || !editTitle.trim()}>
+						<Icon icon="lucide:save" width={16} />
+						{editBusy ? 'Enregistrement…' : 'Enregistrer'}
+					</Button>
+				</div>
+			</Card>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.eq-bar {

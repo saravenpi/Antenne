@@ -16,9 +16,9 @@
 	</span>
 </div>
 
-<!-- Social links, top-right -->
+<!-- Social links, bottom-left (both mobile and desktop) -->
 {#if socials.length}
-	<div class="fixed right-4 top-4 z-40 flex items-center gap-1.5 sm:right-6 sm:top-6">
+	<div class="fixed bottom-4 left-4 z-40 flex items-center gap-1.5 sm:bottom-6 sm:left-6">
 		{#each socials as s (s.platform + s.url)}
 			<a
 				href={s.url}

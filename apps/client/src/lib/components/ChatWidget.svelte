@@ -25,7 +25,8 @@
 	let listEl: HTMLDivElement | undefined = $state();
 	let atBottom = true;
 
-	// Drag (translate from the bottom-right anchor).
+	// Drag (translate from the bottom-right anchor), via window listeners so
+	// child buttons keep working (no pointer capture).
 	let dx = $state(0);
 	let dy = $state(0);
 	let dragging = false;
@@ -37,12 +38,15 @@
 	const canSend = $derived(!!name.trim() && !!body.trim() && wsOpen);
 
 	function startDrag(e: PointerEvent) {
+		// Don't start a drag when interacting with a control inside the header.
+		if ((e.target as HTMLElement).closest('button, input, a')) return;
 		dragging = true;
 		sx = e.clientX;
 		sy = e.clientY;
 		ox = dx;
 		oy = dy;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		window.addEventListener('pointermove', onDrag);
+		window.addEventListener('pointerup', endDrag);
 	}
 	function onDrag(e: PointerEvent) {
 		if (!dragging) return;
@@ -52,6 +56,8 @@
 	function endDrag() {
 		if (!dragging) return;
 		dragging = false;
+		window.removeEventListener('pointermove', onDrag);
+		window.removeEventListener('pointerup', endDrag);
 		try {
 			localStorage.setItem(POS_KEY, JSON.stringify({ dx, dy }));
 		} catch {
@@ -132,6 +138,14 @@
 		}
 	}
 
+	function minimize() {
+		open = false;
+	}
+	function reopen() {
+		open = true;
+		scrollToBottom();
+	}
+
 	onMount(() => {
 		name = localStorage.getItem(NAME_KEY) ?? '';
 		editingName = !name;
@@ -159,25 +173,23 @@
 		closed = true;
 		if (reconnectTimer) clearTimeout(reconnectTimer);
 		if (errorTimer) clearTimeout(errorTimer);
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('pointermove', onDrag);
+			window.removeEventListener('pointerup', endDrag);
+		}
 		ws?.close();
 	});
 </script>
 
-<div
-	class="fixed bottom-4 right-4 z-50"
-	style="transform: translate({dx}px, {dy}px)"
->
-	{#if open}
+{#if open}
+	<div class="fixed bottom-4 right-4 z-50" style="transform: translate({dx}px, {dy}px)">
 		<div
 			class="flex h-[28rem] w-[20rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background/85 shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl"
 		>
 			<!-- Draggable header -->
 			<div
 				onpointerdown={startDrag}
-				onpointermove={onDrag}
-				onpointerup={endDrag}
-				onpointercancel={endDrag}
-				class="flex cursor-grab items-center justify-between border-b border-border/60 px-3 py-2.5 select-none active:cursor-grabbing"
+				class="flex cursor-grab touch-none items-center justify-between border-b border-border/60 px-3 py-2.5 select-none active:cursor-grabbing"
 			>
 				<div class="flex items-center gap-2 text-sm font-medium">
 					<Icon icon="solar:chat-round-dots-bold-duotone" width={18} />
@@ -189,9 +201,11 @@
 						{chatListeners}
 					</span>
 					<button
-						onclick={() => (open = false)}
-						aria-label="Minimiser"
-						class="text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+						type="button"
+						onclick={minimize}
+						aria-label="Minimiser le chat"
+						title="Minimiser"
+						class="rounded-md p-1 text-[var(--color-muted-foreground)] transition hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]"
 					>
 						<Icon icon="solar:minimize-square-linear" width={18} />
 					</button>
@@ -199,11 +213,7 @@
 			</div>
 
 			<!-- Messages -->
-			<div
-				bind:this={listEl}
-				onscroll={onScroll}
-				class="min-h-0 flex-1 overflow-y-auto p-3"
-			>
+			<div bind:this={listEl} onscroll={onScroll} class="min-h-0 flex-1 overflow-y-auto p-3">
 				{#if messages.length === 0}
 					<p class="py-6 text-center text-xs text-[var(--color-muted-foreground)]">
 						Aucun message. Lance la conversation.
@@ -240,7 +250,7 @@
 				{:else}
 					<div class="mb-2 flex items-center justify-between text-xs text-[var(--color-muted-foreground)]">
 						<span>Pseudo : <span class="font-medium text-[var(--color-foreground)]">{name}</span></span>
-						<button class="underline hover:no-underline" onclick={() => (editingName = true)}>changer</button>
+						<button type="button" class="underline hover:no-underline" onclick={() => (editingName = true)}>changer</button>
 					</div>
 					<div class="flex gap-2">
 						<Input bind:value={body} placeholder="Ton message..." maxlength={500} onkeydown={onChatKey} />
@@ -251,18 +261,20 @@
 				{/if}
 			</div>
 		</div>
-	{:else}
-		<!-- Minimised launcher -->
-		<button
-			onclick={() => (open = true)}
-			class="flex items-center gap-2 rounded-full border border-border/60 bg-background/85 px-4 py-2.5 text-sm font-medium shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl hover:bg-muted/60"
-		>
-			<Icon icon="solar:chat-round-dots-bold-duotone" width={18} />
-			Chat
-			<span class="flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
-				<span class="h-1.5 w-1.5 rounded-full {wsOpen ? 'bg-green-500' : 'bg-[var(--color-muted-foreground)]'}"></span>
-				{chatListeners}
-			</span>
-		</button>
-	{/if}
-</div>
+	</div>
+{:else}
+	<!-- Minimised launcher — always bottom-right -->
+	<button
+		type="button"
+		onclick={reopen}
+		aria-label="Ouvrir le chat"
+		class="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-border/60 bg-background/85 px-4 py-3 text-sm font-medium shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl transition hover:bg-[var(--color-muted)]"
+	>
+		<Icon icon="solar:chat-round-dots-bold-duotone" width={20} />
+		<span>Chat</span>
+		<span class="flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+			<span class="h-1.5 w-1.5 rounded-full {wsOpen ? 'bg-green-500' : 'bg-[var(--color-muted-foreground)]'}"></span>
+			{chatListeners}
+		</span>
+	</button>
+{/if}

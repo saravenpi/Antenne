@@ -66,6 +66,7 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.auth.Middleware)
 		r.Get("/api/tracks", s.handleListTracks)
 		r.Post("/api/tracks", s.handleUploadTrack)
+		r.Post("/api/tracks/rescan", s.handleRescanMetadata)
 		r.Delete("/api/tracks/{id}", s.handleDeleteTrack)
 		r.Put("/api/playlist", s.handleReorderPlaylist)
 		r.Post("/api/live/stop", s.handleLiveStop)

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { scale } from 'svelte/transition';
 	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -8,6 +9,8 @@
 
 	// ---- Live mic ----
 	let live = $state(false);
+	let starting = $state(false);
+	let stopping = $state(false);
 	let error = $state('');
 	let ws: WebSocket | null = null;
 	let recorder: MediaRecorder | null = null;
@@ -15,10 +18,48 @@
 	let audioCtx: AudioContext | null = null;
 	let analyser = $state<AnalyserNode | null>(null);
 
-	async function startLive() {
+	// ---- Mic input selection ----
+	let devices = $state<MediaDeviceInfo[]>([]);
+	let selectedDeviceId = $state('');
+	let micLabelsKnown = $state(false);
+
+	async function refreshDevices() {
+		if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
+		try {
+			const all = await navigator.mediaDevices.enumerateDevices();
+			devices = all.filter((d) => d.kind === 'audioinput');
+			micLabelsKnown = devices.some((d) => d.label !== '');
+			// Drop a stale selection (device was unplugged).
+			if (selectedDeviceId && !devices.some((d) => d.deviceId === selectedDeviceId)) {
+				selectedDeviceId = '';
+			}
+		} catch {
+			/* ignore — enumeration is best-effort */
+		}
+	}
+
+	// Browsers hide device labels/ids until mic access is granted at least once.
+	// Probe for permission, then re-enumerate so the real input names show up.
+	async function requestMicAccess() {
 		error = '';
 		try {
-			micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+			probe.getTracks().forEach((t) => t.stop());
+		} catch (e) {
+			error = (e as Error).message;
+		}
+		await refreshDevices();
+	}
+
+	async function startLive() {
+		if (live || starting) return;
+		starting = true;
+		error = '';
+		try {
+			micStream = await navigator.mediaDevices.getUserMedia({
+				audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+			});
+			refreshDevices();
 			audioCtx = new AudioContext();
 			const src = audioCtx.createMediaStreamSource(micStream);
 			const an = audioCtx.createAnalyser();
@@ -30,24 +71,28 @@
 			ws.binaryType = 'arraybuffer';
 			ws.onopen = () => {
 				recorder = new MediaRecorder(micStream!, { mimeType: 'audio/webm;codecs=opus' });
-				recorder.ondataavailable = async (ev) => {
-					if (ev.data.size > 0 && ws?.readyState === WebSocket.OPEN) ws.send(await ev.data.arrayBuffer());
+				recorder.ondataavailable = (ev) => {
+					if (ev.data.size > 0 && ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
 				};
 				recorder.start(250);
 				live = true;
+				starting = false;
 			};
 			ws.onclose = () => teardownLive();
 		} catch (e) {
 			error = (e as Error).message;
+			starting = false;
 			teardownLive();
 		}
 	}
 
+	// Hard, synchronous teardown of everything. Idempotent — safe to call twice
+	// (e.g. once from stopLive and again from ws.onclose).
 	function teardownLive() {
 		if (recorder && recorder.state !== 'inactive') recorder.stop();
 		micStream?.getTracks().forEach((t) => t.stop());
-		ws?.close();
-		audioCtx?.close();
+		if (ws && ws.readyState !== WebSocket.CLOSED) ws.close();
+		if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
 		recorder = null;
 		micStream = null;
 		ws = null;
@@ -56,9 +101,43 @@
 		live = false;
 	}
 
+	// Stop the mic/audio pipeline but keep the audioCtx/mic alive until AFTER the
+	// recorder has flushed its final chunk over the socket.
+	function stopMedia() {
+		micStream?.getTracks().forEach((t) => t.stop());
+		if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+		micStream = null;
+		audioCtx = null;
+		analyser = null;
+		recorder = null;
+		ws = null;
+		live = false;
+	}
+
 	async function stopLive() {
-		teardownLive();
+		if (!live || stopping) return;
+		stopping = true;
+
+		// Wait for the recorder to flush its final chunk, then close the socket so
+		// that chunk is transmitted before the close frame. If there's no active
+		// recorder, tear down directly.
+		await new Promise<void>((resolve) => {
+			const activeWs = ws;
+			if (recorder && recorder.state !== 'inactive') {
+				recorder.onstop = () => {
+					if (activeWs && activeWs.readyState !== WebSocket.CLOSED) activeWs.close();
+					stopMedia();
+					resolve();
+				};
+				recorder.stop();
+			} else {
+				teardownLive();
+				resolve();
+			}
+		});
+
 		await api.stopLive().catch(() => {});
+		stopping = false;
 	}
 
 	// ---- Clips ----
@@ -93,17 +172,20 @@
 	onMount(() => {
 		refreshNow();
 		nowTimer = setInterval(refreshNow, 5000);
+		refreshDevices();
+		navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
 	});
 
 	onDestroy(() => {
 		teardownLive();
 		clearInterval(nowTimer);
 		clearTimeout(clipTimer);
+		navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices);
 	});
 </script>
 
-<div class="mx-auto max-w-3xl px-6 py-10 md:px-10">
-	<h1 class="text-2xl font-semibold tracking-tight text-foreground">Prise d'antenne</h1>
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
+	<h1 class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Prise d'antenne</h1>
 
 	<!-- Main live card -->
 	<Card class="mt-6 flex flex-col items-center gap-6">
@@ -119,17 +201,72 @@
 			</div>
 		{/if}
 
-		<AudioVisualizer {analyser} variant="bars" class="h-28 w-full" />
+		{#if analyser}
+			<div class="w-full" transition:scale={{ duration: 300, start: 0.9, opacity: 0 }}>
+				<AudioVisualizer {analyser} variant="bars" class="h-28 w-full" />
+			</div>
+		{/if}
+
+		{#if !live}
+			<div class="w-full max-w-sm">
+				<label for="mic-input" class="mb-1.5 block text-sm font-medium text-foreground">
+					Entrée micro
+				</label>
+				<div class="flex items-center gap-2">
+					<select
+						id="mic-input"
+						bind:value={selectedDeviceId}
+						disabled={starting}
+						class="min-h-11 w-full rounded-[var(--radius)] border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--color-foreground)]/20 disabled:opacity-50"
+					>
+						<option value="">Micro par défaut</option>
+						{#each devices as d, i (d.deviceId)}
+							<option value={d.deviceId}>{d.label || `Microphone ${i + 1}`}</option>
+						{/each}
+					</select>
+					<Button
+						variant="outline"
+						size="icon"
+						class="min-h-11 shrink-0"
+						title="Rafraîchir la liste des micros"
+						aria-label="Rafraîchir les micros"
+						disabled={starting}
+						onclick={requestMicAccess}
+					>
+						<Icon icon="lucide:refresh-cw" width={18} />
+					</Button>
+				</div>
+				{#if !micLabelsKnown}
+					<button
+						type="button"
+						class="mt-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+						onclick={requestMicAccess}
+					>
+						Autoriser l'accès pour voir les micros disponibles
+					</button>
+				{/if}
+			</div>
+		{/if}
 
 		{#if live}
-			<Button variant="destructive" size="lg" onclick={stopLive}>
-				<Icon icon="solar:stop-bold" width={20} />
-				Rendre l'antenne
+			<Button variant="destructive" size="lg" class="min-h-11 w-full sm:w-auto" disabled={stopping} onclick={stopLive}>
+				{#if stopping}
+					<Icon icon="lucide:loader-circle" width={20} class="animate-spin" />
+					Coupure…
+				{:else}
+					<Icon icon="lucide:square" width={20} />
+					Rendre l'antenne
+				{/if}
 			</Button>
 		{:else}
-			<Button size="lg" onclick={startLive}>
-				<Icon icon="solar:microphone-3-bold-duotone" width={20} />
-				Prendre le micro
+			<Button size="lg" class="min-h-11 w-full sm:w-auto" disabled={starting || stopping} onclick={startLive}>
+				{#if starting}
+					<Icon icon="lucide:loader-circle" width={20} class="animate-spin" />
+					Connexion…
+				{:else}
+					<Icon icon="lucide:mic" width={20} />
+					Prendre le micro
+				{/if}
 			</Button>
 		{/if}
 
@@ -141,7 +278,7 @@
 	<!-- Clipper card -->
 	<Card class="mt-6">
 		<div class="flex items-start gap-3">
-			<Icon icon="solar:clapperboard-play-bold-duotone" width={24} class="mt-0.5 text-muted-foreground" />
+			<Icon icon="lucide:clapperboard" width={24} class="mt-0.5 shrink-0 text-muted-foreground" />
 			<div>
 				<h2 class="text-lg font-medium text-foreground">Clipper</h2>
 				<p class="text-sm text-muted-foreground">Enregistre les dernières secondes de l'antenne</p>

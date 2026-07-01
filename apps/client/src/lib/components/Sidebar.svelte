@@ -5,10 +5,11 @@
 	import { goto } from '$app/navigation';
 
 	const navItems = [
-		{ href: '/admin/live', label: "Prise d'antenne", icon: 'solar:microphone-3-linear' },
-		{ href: '/admin/playlist', label: 'Playlist', icon: 'solar:playlist-2-linear' },
-		{ href: '/admin/clips', label: 'Clips', icon: 'solar:clapperboard-play-linear' },
-		{ href: '/admin/chat', label: 'Chat & modération', icon: 'solar:chat-round-line-linear' }
+		{ href: '/admin/live', label: "Prise d'antenne", icon: 'lucide:mic' },
+		{ href: '/admin/playlist', label: 'Playlist', icon: 'lucide:list-music' },
+		{ href: '/admin/clips', label: 'Clips', icon: 'lucide:clapperboard' },
+		{ href: '/admin/chat', label: 'Chat & modération', icon: 'lucide:message-circle' },
+		{ href: '/admin/appearance', label: 'Apparence', icon: 'lucide:palette' }
 	];
 
 	function isActive(href: string): boolean {
@@ -51,7 +52,7 @@
 			href="/"
 			class="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 		>
-			<Icon icon="solar:soundwave-linear" width={18} />
+			<Icon icon="lucide:audio-lines" width={18} />
 			<span>La radio</span>
 		</a>
 		<button
@@ -59,7 +60,7 @@
 			onclick={logout}
 			class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-red-500"
 		>
-			<Icon icon="solar:logout-3-linear" width={18} />
+			<Icon icon="lucide:log-out" width={18} />
 			<span>Déconnexion</span>
 		</button>
 	</div>

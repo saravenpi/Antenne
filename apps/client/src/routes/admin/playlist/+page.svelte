@@ -13,6 +13,9 @@
 	let queue = $state<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error' }[]>([]);
 	let uploading = $state(false);
 
+	let cleaning = $state(false);
+	let cleanError = $state('');
+
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 	async function loadTracks() {
@@ -45,9 +48,8 @@
 		for (let i = 0; i < audio.length; i++) {
 			const file = audio[i];
 			queue[i] = { ...queue[i], status: 'uploading' };
-			const titleFromName = file.name.replace(/\.[^./\\]+$/, '');
 			try {
-				await api.upload(file, titleFromName, '');
+				await api.upload(file, '', '');
 				queue[i] = { ...queue[i], status: 'done' };
 				await loadTracks();
 			} catch (e) {
@@ -70,6 +72,18 @@
 		const input = e.currentTarget as HTMLInputElement;
 		if (input.files) handleFiles(Array.from(input.files));
 		input.value = '';
+	}
+
+	async function cleanMetadata() {
+		cleaning = true;
+		cleanError = '';
+		try {
+			tracks = await api.rescanMetadata();
+		} catch (e) {
+			cleanError = e instanceof Error ? e.message : String(e);
+		} finally {
+			cleaning = false;
+		}
 	}
 
 	async function move(index: number, dir: -1 | 1) {
@@ -105,16 +119,30 @@
 	});
 </script>
 
-<div class="mx-auto max-w-3xl px-6 py-10 md:px-10">
-	<h1 class="mb-6 text-2xl font-semibold text-[var(--color-foreground)]">
-		Playlist ({tracks.length})
-	</h1>
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
+	<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+		<h1 class="text-xl font-semibold text-[var(--color-foreground)] sm:text-2xl">
+			Playlist ({tracks.length})
+		</h1>
+		<Button variant="outline" disabled={cleaning} onclick={cleanMetadata}>
+			{#if cleaning}
+				<Icon icon="lucide:loader-circle" width={18} class="animate-spin" />
+				Nettoyage…
+			{:else}
+				<Icon icon="lucide:wand-sparkles" width={18} />
+				Nettoyer les métadonnées
+			{/if}
+		</Button>
+	</div>
+	{#if cleanError}
+		<p class="mb-6 text-sm text-red-500">{cleanError}</p>
+	{/if}
 
 	<!-- Multi-file drop zone -->
 	<div
 		role="button"
 		tabindex="0"
-		class="mb-8 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed px-6 py-12 text-center transition {dragOver
+		class="mb-8 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed px-4 py-10 text-center transition sm:px-6 sm:py-12 {dragOver
 			? 'border-[var(--color-foreground)] bg-[var(--color-muted)]'
 			: 'border-[var(--color-border)]'}"
 		ondragover={(e) => {
@@ -129,7 +157,7 @@
 		}}
 	>
 		<Icon
-			icon="solar:cloud-upload-bold-duotone"
+			icon="lucide:cloud-upload"
 			width={48}
 			class="text-[var(--color-muted-foreground)]"
 		/>
@@ -156,19 +184,19 @@
 				<div class="flex items-center gap-2 text-sm">
 					{#if item.status === 'uploading'}
 						<Icon
-							icon="solar:refresh-linear"
+							icon="lucide:loader-circle"
 							width={16}
-							class="animate-spin text-[var(--color-muted-foreground)]"
+							class="shrink-0 animate-spin text-[var(--color-muted-foreground)]"
 						/>
 					{:else if item.status === 'done'}
-						<Icon icon="solar:check-circle-bold" width={16} class="text-green-500" />
+						<Icon icon="lucide:circle-check-big" width={16} class="shrink-0 text-green-500" />
 					{:else if item.status === 'error'}
-						<Icon icon="solar:close-circle-bold" width={16} class="text-red-500" />
+						<Icon icon="lucide:circle-x" width={16} class="shrink-0 text-red-500" />
 					{:else}
 						<Icon
-							icon="solar:clock-circle-linear"
+							icon="lucide:clock"
 							width={16}
-							class="text-[var(--color-muted-foreground)]"
+							class="shrink-0 text-[var(--color-muted-foreground)]"
 						/>
 					{/if}
 					<span class="truncate text-[var(--color-foreground)]">{item.name}</span>
@@ -198,9 +226,9 @@
 						{i + 1}
 					</span>
 					<Icon
-						icon="solar:soundwave-bold-duotone"
+						icon="lucide:audio-lines"
 						width={20}
-						class="shrink-0 {isNow
+						class="hidden shrink-0 sm:block {isNow
 							? 'text-green-500'
 							: 'text-[var(--color-muted-foreground)]'}"
 					/>
@@ -237,7 +265,7 @@
 							disabled={i === 0}
 							onclick={() => move(i, -1)}
 						>
-							<Icon icon="solar:alt-arrow-up-linear" width={18} />
+							<Icon icon="lucide:chevron-up" width={18} />
 						</Button>
 						<Button
 							variant="ghost"
@@ -246,7 +274,7 @@
 							disabled={i === tracks.length - 1}
 							onclick={() => move(i, 1)}
 						>
-							<Icon icon="solar:alt-arrow-down-linear" width={18} />
+							<Icon icon="lucide:chevron-down" width={18} />
 						</Button>
 						<Button
 							variant="ghost"
@@ -254,7 +282,7 @@
 							class="h-8 w-8 text-red-500 hover:bg-red-500/10"
 							onclick={() => remove(track.id)}
 						>
-							<Icon icon="solar:trash-bin-trash-bold-duotone" width={18} />
+							<Icon icon="lucide:trash-2" width={18} />
 						</Button>
 					</div>
 				</Card>

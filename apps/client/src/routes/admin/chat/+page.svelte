@@ -225,51 +225,8 @@
 			const s = await api.settings();
 			bannedWordsText = s.bannedWords.join('\n');
 			slowModeSec = s.slowModeSec ?? 0;
-			background = s.background ?? '';
 		} catch (err) {
 			settingsError = err instanceof Error ? err.message : 'Chargement impossible';
-		}
-	}
-
-	// ---- Appearance panel (public listener page background) ----
-	let background = $state('');
-	let bgColor = $state('#0a0a0a');
-	let bgImageUrl = $state('');
-	let apprBusy = $state(false);
-	let apprSaved = $state(false);
-	let apprError = $state<string | null>(null);
-	let apprTimer: ReturnType<typeof setTimeout> | null = null;
-
-	const bgPresets: { label: string; value: string }[] = [
-		{ label: 'Défaut', value: '' },
-		{ label: 'Nuit', value: 'radial-gradient(circle at 50% 0%, #1b1b1b, #0a0a0a)' },
-		{ label: 'Violet', value: 'linear-gradient(160deg, #241b4d, #0a0a0a)' },
-		{ label: 'Braise', value: 'linear-gradient(160deg, #3b0d0d, #0a0a0a)' },
-		{ label: 'Forêt', value: 'linear-gradient(160deg, #0b2b1e, #0a0a0a)' },
-		{ label: 'Océan', value: 'linear-gradient(160deg, #0b2540, #0a0a0a)' }
-	];
-
-	function applyColor() {
-		background = bgColor;
-	}
-	function applyImage() {
-		const u = bgImageUrl.trim();
-		if (u) background = `url("${u}") center/cover no-repeat fixed`;
-	}
-
-	async function saveAppearance() {
-		apprBusy = true;
-		apprError = null;
-		apprSaved = false;
-		try {
-			await api.saveSettings({ background });
-			apprSaved = true;
-			if (apprTimer) clearTimeout(apprTimer);
-			apprTimer = setTimeout(() => (apprSaved = false), 2500);
-		} catch (err) {
-			apprError = err instanceof Error ? err.message : 'Enregistrement impossible';
-		} finally {
-			apprBusy = false;
 		}
 	}
 
@@ -312,14 +269,13 @@
 		destroyed = true;
 		if (reconnectTimer) clearTimeout(reconnectTimer);
 		if (savedTimer) clearTimeout(savedTimer);
-		if (apprTimer) clearTimeout(apprTimer);
 		ws?.close();
 	});
 </script>
 
-<div class="mx-auto max-w-4xl px-6 py-10 md:px-10">
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
 	<div class="mb-8">
-		<h1 class="text-2xl font-semibold tracking-tight text-foreground">Chat &amp; modération</h1>
+		<h1 class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Chat &amp; modération</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
 			Le direct de la régie : suivez les messages, répondez, et modérez les auditeurs.
 		</p>
@@ -340,7 +296,7 @@
 						</span>
 					</div>
 					<span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-						<Icon icon="solar:users-group-rounded-linear" width={16} />
+						<Icon icon="lucide:users" width={16} />
 						{listeners} à l'écoute
 					</span>
 				</div>
@@ -372,7 +328,7 @@
 										<p class="mt-0.5 break-words text-sm text-foreground">{msg.body}</p>
 									</div>
 									<div
-										class="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100"
+										class="flex shrink-0 items-center gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
 									>
 										<Button
 											variant="ghost"
@@ -382,7 +338,7 @@
 											aria-label="Supprimer le message"
 											title="Supprimer"
 										>
-											<Icon icon="solar:trash-bin-trash-linear" width={16} />
+											<Icon icon="lucide:trash-2" width={16} />
 										</Button>
 										{#if msg.ip}
 											{@const ip = msg.ip}
@@ -394,7 +350,7 @@
 												aria-label="Bannir l'IP"
 												title="Bannir l'IP"
 											>
-												<Icon icon="solar:forbidden-circle-linear" width={16} />
+												<Icon icon="lucide:ban" width={16} />
 											</Button>
 											<Button
 												variant="ghost"
@@ -404,7 +360,7 @@
 												aria-label="Restreindre l'IP"
 												title="Restreindre (shadow-ban)"
 											>
-												<Icon icon="solar:eye-closed-linear" width={16} />
+												<Icon icon="lucide:eye-off" width={16} />
 											</Button>
 										{/if}
 									</div>
@@ -423,7 +379,7 @@
 							aria-label="Message de la régie"
 						/>
 						<Button size="icon" onclick={send} disabled={!composeBody.trim() || !connected} aria-label="Envoyer">
-							<Icon icon="solar:plain-linear" width={18} />
+							<Icon icon="lucide:send" width={18} />
 						</Button>
 					</div>
 				</div>
@@ -435,7 +391,7 @@
 			<!-- Bans -->
 			<Card>
 				<div class="mb-3 flex items-center gap-2">
-					<Icon icon="solar:forbidden-circle-linear" width={18} class="text-foreground" />
+					<Icon icon="lucide:ban" width={18} class="text-foreground" />
 					<h2 class="text-base font-semibold text-foreground">Bannis (IP)</h2>
 				</div>
 
@@ -473,7 +429,7 @@
 			<!-- Restrictions -->
 			<Card>
 				<div class="mb-1 flex items-center gap-2">
-					<Icon icon="solar:eye-closed-linear" width={18} class="text-foreground" />
+					<Icon icon="lucide:eye-off" width={18} class="text-foreground" />
 					<h2 class="text-base font-semibold text-foreground">Restreints (shadow-ban)</h2>
 				</div>
 				<p class="mb-3 text-xs text-muted-foreground">
@@ -520,7 +476,7 @@
 	<!-- ================= Settings ================= -->
 	<Card class="mt-6">
 		<div class="mb-3 flex items-center gap-2">
-			<Icon icon="solar:settings-linear" width={18} class="text-foreground" />
+			<Icon icon="lucide:settings" width={18} class="text-foreground" />
 			<h2 class="text-base font-semibold text-foreground">Réglages du chat</h2>
 		</div>
 
@@ -549,7 +505,8 @@
 					id="slow-mode"
 					type="number"
 					min="0"
-					bind:value={slowModeSec}
+					value={String(slowModeSec)}
+					oninput={(e) => (slowModeSec = Number((e.currentTarget as HTMLInputElement).value) || 0)}
 					placeholder="0"
 					aria-label="Délai minimum entre messages"
 				/>
@@ -560,7 +517,7 @@
 				<Button type="submit" disabled={settingsBusy}>Enregistrer</Button>
 				{#if settingsSaved}
 					<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-						<Icon icon="solar:check-circle-linear" width={16} />
+						<Icon icon="lucide:circle-check" width={16} />
 						Enregistré
 					</span>
 				{/if}
@@ -569,103 +526,5 @@
 				{/if}
 			</div>
 		</form>
-	</Card>
-
-	<!-- ================= Appearance ================= -->
-	<Card class="mt-6">
-		<div class="mb-1 flex items-center gap-2">
-			<Icon icon="solar:pallete-2-linear" width={18} class="text-foreground" />
-			<h2 class="text-base font-semibold text-foreground">Apparence de la page auditeur</h2>
-		</div>
-		<p class="mb-4 text-xs text-muted-foreground">
-			Personnalise le fond de la page d'écoute (couleur, dégradé ou image).
-		</p>
-
-		<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-			<div class="space-y-4">
-				<!-- Presets -->
-				<div>
-					<span class="mb-1.5 block text-sm font-medium text-foreground">Ambiances</span>
-					<div class="flex flex-wrap gap-2">
-						{#each bgPresets as p (p.label)}
-							<button
-								type="button"
-								onclick={() => (background = p.value)}
-								class="rounded-full border border-border px-3 py-1.5 text-xs transition hover:bg-muted {background ===
-								p.value
-									? 'bg-foreground text-background'
-									: 'text-muted-foreground'}"
-							>
-								{p.label}
-							</button>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Color -->
-				<div>
-					<span class="mb-1.5 block text-sm font-medium text-foreground">Couleur</span>
-					<div class="flex items-center gap-2">
-						<input
-							type="color"
-							bind:value={bgColor}
-							aria-label="Couleur de fond"
-							class="h-10 w-14 cursor-pointer rounded-[var(--radius)] border border-border bg-transparent"
-						/>
-						<Button type="button" variant="outline" size="sm" onclick={applyColor}>
-							Utiliser cette couleur
-						</Button>
-					</div>
-				</div>
-
-				<!-- Image -->
-				<div>
-					<label for="bg-image" class="mb-1.5 block text-sm font-medium text-foreground">
-						Image (URL)
-					</label>
-					<div class="flex gap-2">
-						<Input id="bg-image" bind:value={bgImageUrl} placeholder="https://…/image.jpg" />
-						<Button type="button" variant="outline" size="sm" onclick={applyImage}>Appliquer</Button>
-					</div>
-				</div>
-
-				<!-- Raw CSS (advanced) -->
-				<div>
-					<label for="bg-raw" class="mb-1.5 block text-sm font-medium text-foreground">
-						Valeur CSS <span class="text-muted-foreground">(avancé)</span>
-					</label>
-					<Input id="bg-raw" bind:value={background} placeholder="vide = thème par défaut" />
-				</div>
-
-				<div class="flex items-center gap-3">
-					<Button type="button" onclick={saveAppearance} disabled={apprBusy}>Enregistrer le fond</Button>
-					<Button type="button" variant="ghost" size="sm" onclick={() => (background = '')}>
-						Réinitialiser
-					</Button>
-					{#if apprSaved}
-						<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-							<Icon icon="solar:check-circle-linear" width={16} /> Enregistré
-						</span>
-					{/if}
-					{#if apprError}
-						<span class="text-sm text-red-500">{apprError}</span>
-					{/if}
-				</div>
-			</div>
-
-			<!-- Live preview -->
-			<div>
-				<span class="mb-1.5 block text-sm font-medium text-foreground">Aperçu</span>
-				<div
-					class="flex h-56 items-center justify-center rounded-[var(--radius)] border border-border"
-					style={background ? `background: ${background};` : 'background: var(--color-background);'}
-				>
-					<div class="flex flex-col items-center gap-2 text-foreground">
-						<Icon icon="solar:podcast-bold-duotone" width={40} />
-						<span class="text-lg font-bold">Antenne</span>
-					</div>
-				</div>
-			</div>
-		</div>
 	</Card>
 </div>

@@ -47,16 +47,16 @@
 	onMount(load);
 </script>
 
-<div class="mx-auto max-w-3xl px-6 py-10 md:px-10">
-	<div class="mb-8 flex items-start justify-between gap-4">
-		<div>
-			<h1 class="text-2xl font-semibold tracking-tight text-foreground">Clips</h1>
+<div class="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
+	<div class="mb-8 flex flex-wrap items-start justify-between gap-4">
+		<div class="min-w-0">
+			<h1 class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Clips</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
 				Les extraits enregistrés depuis la régie.
 			</p>
 		</div>
-		<Button variant="outline" size="sm" onclick={load} disabled={loading}>
-			<Icon icon="solar:refresh-linear" width={16} />
+		<Button variant="outline" size="sm" class="shrink-0" onclick={load} disabled={loading}>
+			<Icon icon="lucide:loader-circle" width={16} class={loading ? 'animate-spin' : ''} />
 			Rafraîchir
 		</Button>
 	</div>
@@ -66,7 +66,7 @@
 	{:else if clips.length === 0}
 		<div class="flex flex-col items-center gap-3 py-16 text-center">
 			<Icon
-				icon="solar:clapperboard-play-bold-duotone"
+				icon="lucide:clapperboard"
 				width={48}
 				class="text-muted-foreground"
 			/>
@@ -94,7 +94,7 @@
 							disabled={deleting === clip.id}
 							aria-label="Supprimer le clip"
 						>
-							<Icon icon="solar:trash-bin-trash-bold-duotone" width={20} />
+							<Icon icon="lucide:trash-2" width={20} />
 						</Button>
 					</div>
 
@@ -111,7 +111,7 @@
 							download
 							class="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-transparent px-3 text-sm font-medium text-foreground transition hover:bg-muted"
 						>
-							<Icon icon="solar:download-minimalistic-linear" width={16} />
+							<Icon icon="lucide:download" width={16} />
 							Télécharger
 						</a>
 					</div>

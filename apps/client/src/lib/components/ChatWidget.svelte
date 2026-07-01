@@ -182,9 +182,9 @@
 </script>
 
 {#if open}
-	<div class="fixed bottom-4 right-4 z-50" style="transform: translate({dx}px, {dy}px)">
+	<div class="fixed bottom-24 right-4 z-50 sm:bottom-4" style="transform: translate({dx}px, {dy}px)">
 		<div
-			class="flex h-[28rem] w-[20rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background/85 shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl"
+			class="flex h-[28rem] max-h-[calc(100dvh-7rem)] w-[20rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background/85 shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl sm:max-h-[calc(100dvh-2rem)]"
 		>
 			<!-- Draggable header -->
 			<div
@@ -192,7 +192,7 @@
 				class="flex cursor-grab touch-none items-center justify-between border-b border-border/60 px-3 py-2.5 select-none active:cursor-grabbing"
 			>
 				<div class="flex items-center gap-2 text-sm font-medium">
-					<Icon icon="solar:chat-round-dots-bold-duotone" width={18} />
+					<Icon icon="lucide:message-circle-more" width={18} />
 					<span>Chat en direct</span>
 				</div>
 				<div class="flex items-center gap-2">
@@ -207,7 +207,7 @@
 						title="Minimiser"
 						class="rounded-md p-1 text-[var(--color-muted-foreground)] transition hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]"
 					>
-						<Icon icon="solar:minimize-square-linear" width={18} />
+						<Icon icon="lucide:minimize-2" width={18} />
 					</button>
 				</div>
 			</div>
@@ -255,7 +255,7 @@
 					<div class="flex gap-2">
 						<Input bind:value={body} placeholder="Ton message..." maxlength={500} onkeydown={onChatKey} />
 						<Button size="icon" onclick={send} disabled={!canSend} aria-label="Envoyer">
-							<Icon icon="solar:plain-2-bold" width={18} />
+							<Icon icon="lucide:send" width={18} />
 						</Button>
 					</div>
 				{/if}
@@ -268,11 +268,11 @@
 		type="button"
 		onclick={reopen}
 		aria-label="Ouvrir le chat"
-		class="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-border/60 bg-background/85 px-4 py-3 text-sm font-medium shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl transition hover:bg-[var(--color-muted)]"
+		class="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center gap-2 rounded-full border border-border/60 bg-background/85 text-sm font-medium shadow-2xl shadow-black/40 ring-1 ring-white/5 backdrop-blur-xl transition hover:bg-[var(--color-muted)] sm:h-auto sm:w-auto sm:justify-start sm:px-4 sm:py-3"
 	>
-		<Icon icon="solar:chat-round-dots-bold-duotone" width={20} />
-		<span>Chat</span>
-		<span class="flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+		<Icon icon="lucide:message-circle-more" width={20} class="shrink-0" />
+		<span class="hidden sm:inline">Chat</span>
+		<span class="hidden items-center gap-1 text-xs text-[var(--color-muted-foreground)] sm:flex">
 			<span class="h-1.5 w-1.5 rounded-full {wsOpen ? 'bg-green-500' : 'bg-[var(--color-muted-foreground)]'}"></span>
 			{chatListeners}
 		</span>

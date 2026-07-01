@@ -122,6 +122,7 @@ export const api = {
 
 	// ---- Tracks / playlist ----
 	tracks: () => req<Track[]>('/tracks'),
+	rescanMetadata: () => req<Track[]>('/tracks/rescan', { method: 'POST' }),
 	deleteTrack: (id: string) => req<void>(`/tracks/${id}`, { method: 'DELETE' }),
 	reorder: (order: string[]) => req<{ status: string }>('/playlist', jsonBody('PUT', { order })),
 	async upload(file: File, title: string, artist: string): Promise<Track> {

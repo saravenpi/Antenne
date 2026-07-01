@@ -3,10 +3,11 @@
 	import { page } from '$app/state';
 
 	const navItems = [
-		{ href: '/admin/live', label: "Prise d'antenne", icon: 'solar:microphone-3-linear' },
-		{ href: '/admin/playlist', label: 'Playlist', icon: 'solar:playlist-2-linear' },
-		{ href: '/admin/clips', label: 'Clips', icon: 'solar:clapperboard-play-linear' },
-		{ href: '/admin/chat', label: 'Chat & modération', icon: 'solar:chat-round-line-linear' }
+		{ href: '/admin/live', label: "Prise d'antenne", icon: 'lucide:mic' },
+		{ href: '/admin/playlist', label: 'Playlist', icon: 'lucide:list-music' },
+		{ href: '/admin/clips', label: 'Clips', icon: 'lucide:clapperboard' },
+		{ href: '/admin/chat', label: 'Chat & modération', icon: 'lucide:message-circle' },
+		{ href: '/admin/appearance', label: 'Apparence', icon: 'lucide:palette' }
 	];
 
 	function isActive(href: string): boolean {
@@ -26,7 +27,7 @@
 				href={item.href}
 				aria-label={item.label}
 				title={item.label}
-				class="flex items-center justify-center rounded-full px-3.5 py-2 transition-all duration-200 {isActive(
+				class="flex items-center justify-center rounded-full px-3 py-2.5 transition-all duration-200 {isActive(
 					item.href
 				)
 					? 'bg-foreground text-background shadow-sm'

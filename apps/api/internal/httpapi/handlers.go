@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -119,9 +121,21 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Prefer explicit form values; otherwise read the file's embedded tags so the
+	// playlist shows the real title/artist instead of the raw filename.
 	title := r.FormValue("title")
+	artist := r.FormValue("artist")
+	if title == "" || artist == "" {
+		metaTitle, metaArtist := s.store.Metadata(filename)
+		if title == "" {
+			title = metaTitle
+		}
+		if artist == "" {
+			artist = metaArtist
+		}
+	}
 	if title == "" {
-		title = header.Filename
+		title = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
 	}
 
 	var maxPos int
@@ -129,7 +143,7 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 
 	track := models.Track{
 		Title:       title,
-		Artist:      r.FormValue("artist"),
+		Artist:      artist,
 		Filename:    filename,
 		DurationSec: s.store.Duration(filename),
 		Position:    maxPos + 1,
@@ -165,6 +179,35 @@ func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.Delete(track.Filename)
 	_ = s.SyncPlaylist()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRescanMetadata re-reads every track's embedded tags via ffprobe and
+// updates the stored title/artist when the file provides them. Backs the
+// playlist "Nettoyer les métadonnées" button.
+func (s *Server) handleRescanMetadata(w http.ResponseWriter, r *http.Request) {
+	var tracks []models.Track
+	if err := s.db.Order("position asc").Find(&tracks).Error; err != nil {
+		writeErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	for i := range tracks {
+		title, artist := s.store.Metadata(tracks[i].Filename)
+		updates := map[string]any{}
+		if title != "" && title != tracks[i].Title {
+			updates["title"] = title
+			tracks[i].Title = title
+		}
+		if artist != "" && artist != tracks[i].Artist {
+			updates["artist"] = artist
+			tracks[i].Artist = artist
+		}
+		if len(updates) > 0 {
+			s.db.Model(&models.Track{}).Where("id = ?", tracks[i].ID).Updates(updates)
+		}
+	}
+	_ = s.SyncPlaylist()
+	sortTracks(tracks)
+	writeJSON(w, http.StatusOK, tracks)
 }
 
 // --- Playlist order ---
@@ -209,7 +252,15 @@ func (s *Server) handleLiveIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	if err := s.engine.Live.Start(); err != nil {
+	// Reject a second concurrent ingest: two browser streams fed into the single
+	// decoder would interleave and corrupt the broadcast. A rapid double-click on
+	// "prendre l'antenne" is the usual cause.
+	started, err := s.engine.Live.Start()
+	if err != nil {
+		return
+	}
+	if !started {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"already live"}`))
 		return
 	}
 	defer s.engine.Live.Stop()

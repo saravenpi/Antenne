@@ -63,6 +63,34 @@ func (s *Store) Delete(filename string) error {
 	return err
 }
 
+// Metadata probes an audio file's embedded title/artist tags via ffprobe.
+// Missing tags come back as empty strings. Container tag keys are
+// case-insensitive across formats, so ffprobe normalises them for us.
+func (s *Store) Metadata(filename string) (title, artist string) {
+	out, err := exec.Command(s.ffprobe,
+		"-v", "error",
+		"-show_entries", "format_tags=title,artist",
+		"-of", "default=noprint_wrappers=1",
+		s.Path(filename),
+	).Output()
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		key, val, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimPrefix(key, "TAG:")) {
+		case "title":
+			title = strings.TrimSpace(val)
+		case "artist":
+			artist = strings.TrimSpace(val)
+		}
+	}
+	return title, artist
+}
+
 // Duration probes an audio file's length in seconds via ffprobe.
 func (s *Store) Duration(filename string) float64 {
 	out, err := exec.Command(s.ffprobe,

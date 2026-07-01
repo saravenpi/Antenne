@@ -63,6 +63,34 @@ func (s *Store) Delete(filename string) error {
 	return err
 }
 
+// ExtractCover pulls an embedded cover image out of an audio file and writes it
+// next to the source as "<name>.jpg", returning that filename. Returns ok=false
+// when the file has no embedded art. Uses the ffmpeg binary derived alongside
+// ffprobe.
+func (s *Store) ExtractCover(filename string) (string, bool) {
+	ffmpeg := strings.TrimSuffix(s.ffprobe, "ffprobe") + "ffmpeg"
+	base := strings.TrimSuffix(filename, filepath.Ext(filename))
+	cover := base + ".jpg"
+	dst := s.Path(cover)
+	// -frames:v 1 grabs the attached picture (audio files expose it as a video
+	// stream) and re-encodes it to JPEG; -update 1 allows a single-image output.
+	err := exec.Command(ffmpeg,
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-i", s.Path(filename),
+		"-an", "-frames:v", "1", "-update", "1",
+		dst,
+	).Run()
+	if err != nil {
+		_ = os.Remove(dst)
+		return "", false
+	}
+	if info, statErr := os.Stat(dst); statErr != nil || info.Size() == 0 {
+		_ = os.Remove(dst)
+		return "", false
+	}
+	return cover, true
+}
+
 // Metadata probes an audio file's embedded title/artist tags via ffprobe.
 // Missing tags come back as empty strings. Container tag keys are
 // case-insensitive across formats, so ffprobe normalises them for us.

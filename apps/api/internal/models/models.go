@@ -32,6 +32,10 @@ type Track struct {
 	DurationSec float64   `json:"durationSec"`
 	Position    int       `gorm:"index" json:"position"` // playlist order
 	CreatedAt   time.Time `json:"createdAt"`
+	// Cover is the filename of the extracted embedded album art (empty = none).
+	Cover string `json:"-"`
+	// CoverURL is a transient public URL for the cover, set when serializing.
+	CoverURL string `gorm:"-" json:"coverUrl,omitempty"`
 }
 
 func (t *Track) BeforeCreate(*gorm.DB) error {

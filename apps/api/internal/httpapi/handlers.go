@@ -59,8 +59,31 @@ type nowPlayingResp struct {
 	Title     string          `json:"title"`
 	Artist    string          `json:"artist"`
 	TrackID   string          `json:"trackId"`
+	CoverURL  string          `json:"coverUrl,omitempty"`
 	Listeners int64           `json:"listeners"`
 	Next      *nowPlayingItem `json:"next"`
+}
+
+// coverURLFor returns the public cover URL for a track ID, or "" when the track
+// has no embedded art.
+func (s *Server) coverURLFor(trackID string) string {
+	if trackID == "" {
+		return ""
+	}
+	var t models.Track
+	if err := s.db.Select("id", "cover").First(&t, "id = ?", trackID).Error; err != nil || t.Cover == "" {
+		return ""
+	}
+	return "/api/tracks/" + trackID + "/cover"
+}
+
+// decorateTracks fills the transient CoverURL on tracks that have art.
+func decorateTracks(tracks []models.Track) {
+	for i := range tracks {
+		if tracks[i].Cover != "" {
+			tracks[i].CoverURL = "/api/tracks/" + tracks[i].ID.String() + "/cover"
+		}
+	}
 }
 
 // currentNowPlaying builds the live snapshot (no wall-clock override).
@@ -77,6 +100,7 @@ func (s *Server) currentNowPlaying() nowPlayingResp {
 	if title, artist, trackID, ok := s.engine.NextItem(); ok {
 		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
 	}
+	resp.CoverURL = s.coverURLFor(resp.TrackID)
 	return resp
 }
 
@@ -106,6 +130,7 @@ func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
 	if title, artist, trackID, ok := s.engine.NextItem(); ok {
 		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
 	}
+	resp.CoverURL = s.coverURLFor(resp.TrackID)
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -119,7 +144,29 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sortTracks(tracks)
+	decorateTracks(tracks)
 	writeJSON(w, http.StatusOK, tracks)
+}
+
+// handleTrackCover serves a track's extracted album art (public — the listener
+// page and régie both display it).
+func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var track models.Track
+	if err := s.db.First(&track, "id = ?", id).Error; err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	if track.Cover == "" {
+		writeErr(w, http.StatusNotFound, "no cover")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeFile(w, r, s.store.Path(track.Cover))
 }
 
 func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
@@ -167,12 +214,18 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		DurationSec: s.store.Duration(filename),
 		Position:    maxPos + 1,
 	}
+	if cover, ok := s.store.ExtractCover(filename); ok {
+		track.Cover = cover
+	}
 	if err := s.db.Create(&track).Error; err != nil {
 		_ = s.store.Delete(filename)
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	_ = s.SyncPlaylist()
+	if track.Cover != "" {
+		track.CoverURL = "/api/tracks/" + track.ID.String() + "/cover"
+	}
 	writeJSON(w, http.StatusCreated, track)
 }
 
@@ -196,6 +249,9 @@ func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.store.Delete(track.Filename)
+	if track.Cover != "" {
+		_ = s.store.Delete(track.Cover)
+	}
 	_ = s.SyncPlaylist()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -220,12 +276,20 @@ func (s *Server) handleRescanMetadata(w http.ResponseWriter, r *http.Request) {
 			updates["artist"] = artist
 			tracks[i].Artist = artist
 		}
+		// Look for embedded album art when the track doesn't already have one.
+		if tracks[i].Cover == "" {
+			if cover, ok := s.store.ExtractCover(tracks[i].Filename); ok {
+				updates["cover"] = cover
+				tracks[i].Cover = cover
+			}
+		}
 		if len(updates) > 0 {
 			s.db.Model(&models.Track{}).Where("id = ?", tracks[i].ID).Updates(updates)
 		}
 	}
 	_ = s.SyncPlaylist()
 	sortTracks(tracks)
+	decorateTracks(tracks)
 	writeJSON(w, http.StatusOK, tracks)
 }
 

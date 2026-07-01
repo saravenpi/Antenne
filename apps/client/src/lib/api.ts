@@ -26,6 +26,7 @@ export type NowPlaying = {
 	title: string;
 	artist: string;
 	trackId: string;
+	coverUrl?: string;
 	listeners: number;
 	next?: { title: string; artist: string; trackId: string } | null;
 };
@@ -39,6 +40,7 @@ export type Track = {
 	durationSec: number;
 	position: number;
 	createdAt: string;
+	coverUrl?: string;
 };
 
 export type Clip = {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import Hls from 'hls.js';
 	import Icon from '$lib/components/Icon.svelte';
 	import Logo from '$lib/components/Logo.svelte';
@@ -167,6 +168,16 @@
 
 	<!-- Now playing -->
 	<div class="flex flex-col items-center gap-1 text-center">
+		{#if np?.coverUrl}
+			{#key np.coverUrl}
+				<img
+					src={np.coverUrl}
+					alt=""
+					transition:fade
+					class="mb-3 h-28 w-28 rounded-xl object-cover shadow-lg shadow-black/30 sm:h-36 sm:w-36"
+				/>
+			{/key}
+		{/if}
 		{#if np?.live}
 			<span
 				class="flex items-center gap-2 rounded-full border border-red-500/40 px-3 py-1 text-xs font-medium text-red-500"

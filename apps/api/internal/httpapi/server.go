@@ -57,6 +57,7 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/login", s.handleLogin)
 	r.Get("/api/now-playing", s.handleNowPlaying)
 	r.Get("/api/appearance", s.handleAppearance)
+	r.Get("/api/tracks/{id}/cover", s.handleTrackCover)
 	r.Get("/api/clips/{id}/audio", s.handleClipAudio)
 	r.Get("/api/chat/messages", s.handleChatMessages)
 	r.Handle("/stream/*", s.streamHandler())

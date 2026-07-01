@@ -314,6 +314,21 @@
 						? 'border-green-500/60 bg-[var(--color-muted)]'
 						: ''}"
 				>
+					{#if track.coverUrl}
+						<img
+							src={track.coverUrl}
+							alt=""
+							class="h-10 w-10 shrink-0 rounded-md object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<span
+							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-muted)] text-[var(--color-muted-foreground)]"
+							aria-hidden="true"
+						>
+							<Icon icon="lucide:music" width={18} />
+						</span>
+					{/if}
 					<Button
 						variant="ghost"
 						size="icon"

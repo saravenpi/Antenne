@@ -35,7 +35,6 @@
 	// ---- Appearance (public listener page background) ----
 	let background = $state('');
 	let bgColor = $state('#0a0a0a');
-	let bgImageUrl = $state('');
 	let apprBusy = $state(false);
 	let apprSaved = $state(false);
 	let apprError = $state<string | null>(null);
@@ -53,9 +52,60 @@
 	function applyColor() {
 		background = bgColor;
 	}
-	function applyImage() {
-		const u = bgImageUrl.trim();
-		if (u) background = `url("${u}") center/cover no-repeat fixed`;
+
+	// Downscale an uploaded image to a data URL so it can be stored inline in
+	// settings — no external URL/hosting needed.
+	function downscale(
+		file: File,
+		max: number,
+		type: 'image/png' | 'image/jpeg',
+		quality?: number
+	): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+			reader.onload = () => {
+				const img = new Image();
+				img.onerror = () => reject(new Error('Image illisible'));
+				img.onload = () => {
+					try {
+						let { width, height } = img;
+						if (width > height && width > max) {
+							height = Math.round((height * max) / width);
+							width = max;
+						} else if (height > max) {
+							width = Math.round((width * max) / height);
+							height = max;
+						}
+						const canvas = document.createElement('canvas');
+						canvas.width = width;
+						canvas.height = height;
+						const ctx = canvas.getContext('2d');
+						if (!ctx) throw new Error('Canvas indisponible');
+						ctx.drawImage(img, 0, 0, width, height);
+						resolve(canvas.toDataURL(type, quality));
+					} catch (err) {
+						reject(err instanceof Error ? err : new Error('Image illisible'));
+					}
+				};
+				img.src = reader.result as string;
+			};
+			reader.readAsDataURL(file);
+		});
+	}
+
+	async function onBgFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		apprError = null;
+		try {
+			const data = await downscale(file, 1600, 'image/jpeg', 0.82);
+			background = `url("${data}") center/cover no-repeat fixed`;
+		} catch (err) {
+			apprError = err instanceof Error ? err.message : 'Image illisible';
+		}
+		input.value = '';
 	}
 
 	async function saveAppearance() {
@@ -76,52 +126,22 @@
 
 	// ---- Logo ----
 	let logo = $state('');
-	let logoUrl = $state('');
 	let logoBusy = $state(false);
 	let logoSaved = $state(false);
 	let logoError = $state<string | null>(null);
 	let logoTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function onLogoFile(e: Event) {
+	async function onLogoFile(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
 		logoError = null;
-		const reader = new FileReader();
-		reader.onload = () => {
-			const img = new Image();
-			img.onload = () => {
-				try {
-					const max = 256;
-					let { width, height } = img;
-					if (width > height && width > max) {
-						height = Math.round((height * max) / width);
-						width = max;
-					} else if (height > max) {
-						width = Math.round((width * max) / height);
-						height = max;
-					}
-					const canvas = document.createElement('canvas');
-					canvas.width = width;
-					canvas.height = height;
-					const ctx = canvas.getContext('2d');
-					if (!ctx) throw new Error('Canvas indisponible');
-					ctx.drawImage(img, 0, 0, width, height);
-					logo = canvas.toDataURL('image/png');
-				} catch (err) {
-					logoError = err instanceof Error ? err.message : 'Image illisible';
-				}
-			};
-			img.onerror = () => (logoError = 'Image illisible');
-			img.src = reader.result as string;
-		};
-		reader.onerror = () => (logoError = 'Lecture du fichier impossible');
-		reader.readAsDataURL(file);
-	}
-
-	function applyLogoUrl() {
-		const u = logoUrl.trim();
-		if (u) logo = u;
+		try {
+			logo = await downscale(file, 256, 'image/png');
+		} catch (err) {
+			logoError = err instanceof Error ? err.message : 'Image illisible';
+		}
+		input.value = '';
 	}
 
 	async function saveLogo(value: string) {
@@ -281,23 +301,21 @@
 					</div>
 				</div>
 
-				<!-- Image -->
+				<!-- Image upload -->
 				<div>
 					<label for="bg-image" class="mb-1.5 block text-sm font-medium text-foreground">
-						Image (URL)
+						Image de fond
 					</label>
-					<div class="flex gap-2">
-						<Input id="bg-image" bind:value={bgImageUrl} placeholder="https://…/image.jpg" />
-						<Button type="button" variant="outline" size="sm" onclick={applyImage}>Appliquer</Button>
-					</div>
-				</div>
-
-				<!-- Raw CSS (advanced) -->
-				<div>
-					<label for="bg-raw" class="mb-1.5 block text-sm font-medium text-foreground">
-						Valeur CSS <span class="text-muted-foreground">(avancé)</span>
-					</label>
-					<Input id="bg-raw" bind:value={background} placeholder="vide = thème par défaut" />
+					<input
+						id="bg-image"
+						type="file"
+						accept="image/*"
+						onchange={onBgFile}
+						class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-[var(--radius)] file:border file:border-border file:bg-transparent file:px-3 file:py-2 file:text-sm file:text-foreground hover:file:bg-muted"
+					/>
+					<p class="mt-1 text-xs text-muted-foreground">
+						Redimensionnée automatiquement (max 1600 px), puis « Enregistrer le fond ».
+					</p>
 				</div>
 
 				<div class="flex items-center gap-3">
@@ -359,17 +377,6 @@
 					<p class="mt-1 text-xs text-muted-foreground">
 						Redimensionnée automatiquement (max 256×256).
 					</p>
-				</div>
-
-				<!-- URL (advanced) -->
-				<div>
-					<label for="logo-url" class="mb-1.5 block text-sm font-medium text-foreground">
-						URL <span class="text-muted-foreground">(avancé)</span>
-					</label>
-					<div class="flex gap-2">
-						<Input id="logo-url" bind:value={logoUrl} placeholder="https://…/logo.png" />
-						<Button type="button" variant="outline" size="sm" onclick={applyLogoUrl}>Appliquer</Button>
-					</div>
 				</div>
 
 				<div class="flex flex-wrap items-center gap-3">

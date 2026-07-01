@@ -50,6 +50,8 @@
 	<div class="flex flex-col gap-1 border-t border-border px-3 py-3">
 		<a
 			href="/"
+			target="_blank"
+			rel="noopener noreferrer"
 			class="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 		>
 			<Icon icon="lucide:audio-lines" width={18} />

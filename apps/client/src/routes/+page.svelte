@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { fade } from 'svelte/transition';
 	import Hls from 'hls.js';
-	import Icon from '$lib/components/Icon.svelte';
-	import Logo from '$lib/components/Logo.svelte';
 	import AudioVisualizer from '$lib/components/AudioVisualizer.svelte';
 	import ChatWidget from '$lib/components/ChatWidget.svelte';
+	import StationHeader from '$lib/components/player/StationHeader.svelte';
+	import ListenerBadge from '$lib/components/player/ListenerBadge.svelte';
+	import NowPlayingBlock from '$lib/components/player/NowPlaying.svelte';
+	import SoundControls from '$lib/components/player/SoundControls.svelte';
 	import { api, type NowPlaying, type Social } from '$lib/api';
-	import { socialIcon, socialLabel } from '$lib/socials';
 
 	let audio: HTMLAudioElement;
 	let hls: Hls | null = null;
@@ -193,29 +193,7 @@
 
 <audio bind:this={audio} class="hidden"></audio>
 
-<!-- Station identity, top-left -->
-<div class="fixed left-4 top-4 z-40 flex flex-col gap-1.5 sm:left-6 sm:top-6">
-	<div class="flex max-w-[55vw] items-center gap-2.5 sm:max-w-none">
-		<Logo src={logo} size={30} class="shrink-0" />
-		<span class="truncate text-xl font-bold tracking-tight">{stationName}</span>
-	</div>
-	{#if socials.length}
-		<div class="flex items-center gap-2 pl-0.5">
-			{#each socials as s (s.platform + s.url)}
-				<a
-					href={s.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					aria-label={socialLabel(s.platform)}
-					title={socialLabel(s.platform)}
-					class="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-muted-foreground)] transition hover:text-[var(--color-foreground)]"
-				>
-					<Icon icon={socialIcon(s.platform)} width={18} />
-				</a>
-			{/each}
-		</div>
-	{/if}
-</div>
+<StationHeader {logo} {stationName} {socials} />
 
 <main
 	class="flex min-h-screen w-full flex-col items-center justify-center gap-8 px-6 py-12"
@@ -229,79 +207,18 @@
 	{/if}
 
 	<!-- Now playing -->
-	<div class="flex flex-col items-center gap-1 text-center">
-		{#if np?.coverUrl}
-			{#key np.coverUrl}
-				<img
-					src={np.coverUrl}
-					alt=""
-					transition:fade
-					class="mb-3 h-28 w-28 rounded-xl object-cover shadow-lg shadow-black/30 sm:h-36 sm:w-36"
-				/>
-			{/key}
-		{/if}
-		{#if np?.live}
-			<span
-				class="flex items-center gap-2 rounded-full border border-red-500/40 px-3 py-1 text-xs font-medium text-red-500"
-			>
-				<span class="h-2 w-2 animate-pulse rounded-full bg-red-500"></span> EN DIRECT
-			</span>
-		{/if}
-		<p class="mt-2 text-lg font-medium">{np?.title || 'Silence radio'}</p>
-		{#if np?.artist}
-			<p class="text-sm text-[var(--color-muted-foreground)]">{np.artist}</p>
-		{/if}
-	</div>
+	<NowPlayingBlock {np} />
 </main>
 
 <!-- Listener count, floating liquid-glass pill: top-right on mobile, bottom-left from sm up -->
-<div
-	class="fixed right-4 top-4 z-40 flex h-12 items-center gap-2 rounded-full border border-border/40 bg-background/55 px-4 text-sm text-[var(--color-muted-foreground)] shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150 sm:right-auto sm:top-auto sm:left-6 sm:[bottom:max(1.5rem,env(safe-area-inset-bottom))]"
->
-	<Icon icon="lucide:users" width={18} class="shrink-0" />
-	<span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
-		<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75"></span>
-		<span class="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
-	</span>
-	<span class="whitespace-nowrap">{np?.listeners ?? 0} à l'écoute</span>
-</div>
+<ListenerBadge count={np?.listeners ?? 0} />
 
 <!-- Sound controls, floating liquid glass at bottom-center -->
-<div
-	class="fixed left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 [bottom:max(1rem,env(safe-area-inset-bottom))] sm:[bottom:max(1.5rem,env(safe-area-inset-bottom))]"
->
-	<div
-		class="flex h-12 items-center gap-3 rounded-full border border-border/40 bg-background/55 px-4 shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150"
-	>
-		<Icon
-			icon={muted || volume === 0 ? 'lucide:volume-off' : 'lucide:volume-2'}
-			width={18}
-			class="shrink-0 text-[var(--color-muted-foreground)]"
-		/>
-		<input
-			type="range"
-			min="0"
-			max="1"
-			step="0.01"
-			bind:value={volume}
-			aria-label="Volume"
-			class="h-1.5 w-20 cursor-pointer appearance-none rounded-full bg-[var(--color-muted)] accent-[var(--color-foreground)] sm:w-40"
-		/>
-	</div>
-	<button
-		onclick={() => (needsGesture ? start() : toggleMute())}
-		aria-label={needsGesture ? 'Activer le son' : muted ? 'Réactiver le son' : 'Couper le son'}
-		class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/40 bg-background/55 text-[var(--color-foreground)] shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150 transition hover:bg-background/70"
-	>
-		<Icon
-			icon={needsGesture
-				? 'lucide:play'
-				: muted
-					? 'lucide:volume-off'
-					: 'lucide:volume-2'}
-			width={22}
-		/>
-	</button>
-</div>
+<SoundControls
+	bind:volume
+	{muted}
+	{needsGesture}
+	onprimary={() => (needsGesture ? start() : toggleMute())}
+/>
 
 <ChatWidget />

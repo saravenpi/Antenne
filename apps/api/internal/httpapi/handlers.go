@@ -55,6 +55,7 @@ type nowPlayingItem struct {
 
 type nowPlayingResp struct {
 	Live      bool            `json:"live"`
+	Paused    bool            `json:"paused"`
 	Title     string          `json:"title"`
 	Artist    string          `json:"artist"`
 	TrackID   string          `json:"trackId"`
@@ -62,10 +63,28 @@ type nowPlayingResp struct {
 	Next      *nowPlayingItem `json:"next"`
 }
 
+// currentNowPlaying builds the live snapshot (no wall-clock override).
+func (s *Server) currentNowPlaying() nowPlayingResp {
+	np := s.engine.NowPlaying()
+	resp := nowPlayingResp{
+		Live:      np.Live,
+		Paused:    np.Paused,
+		Title:     np.Title,
+		Artist:    np.Artist,
+		TrackID:   np.TrackID,
+		Listeners: int64(s.listeners.count()),
+	}
+	if title, artist, trackID, ok := s.engine.NextItem(); ok {
+		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
+	}
+	return resp
+}
+
 func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
 	np := s.engine.NowPlaying()
 	resp := nowPlayingResp{
 		Live:      np.Live,
+		Paused:    np.Paused,
 		Title:     np.Title,
 		Artist:    np.Artist,
 		TrackID:   np.TrackID,
@@ -281,4 +300,37 @@ func (s *Server) handleLiveIngest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLiveStop(w http.ResponseWriter, r *http.Request) {
 	s.engine.Live.Stop()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+// --- Playback control (manual DJ overrides on top of the 24/7 auto playlist) ---
+
+func (s *Server) handlePlaybackNext(w http.ResponseWriter, r *http.Request) {
+	s.engine.Playlist.Skip()
+	writeJSON(w, http.StatusOK, s.currentNowPlaying())
+}
+
+func (s *Server) handlePlaybackPrev(w http.ResponseWriter, r *http.Request) {
+	s.engine.Playlist.Prev()
+	writeJSON(w, http.StatusOK, s.currentNowPlaying())
+}
+
+func (s *Server) handlePlaybackPause(w http.ResponseWriter, r *http.Request) {
+	s.engine.Playlist.SetPaused(true)
+	writeJSON(w, http.StatusOK, s.currentNowPlaying())
+}
+
+func (s *Server) handlePlaybackResume(w http.ResponseWriter, r *http.Request) {
+	s.engine.Playlist.SetPaused(false)
+	writeJSON(w, http.StatusOK, s.currentNowPlaying())
+}
+
+// handlePlayTrack jumps straight to a track (double-click "play now" in the
+// régie) and resumes if paused.
+func (s *Server) handlePlayTrack(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !s.engine.Playlist.PlayID(id) {
+		writeErr(w, http.StatusNotFound, "track not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.currentNowPlaying())
 }

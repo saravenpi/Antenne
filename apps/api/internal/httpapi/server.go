@@ -71,6 +71,12 @@ func (s *Server) Router() http.Handler {
 		r.Put("/api/playlist", s.handleReorderPlaylist)
 		r.Post("/api/live/stop", s.handleLiveStop)
 
+		r.Post("/api/playback/next", s.handlePlaybackNext)
+		r.Post("/api/playback/previous", s.handlePlaybackPrev)
+		r.Post("/api/playback/pause", s.handlePlaybackPause)
+		r.Post("/api/playback/resume", s.handlePlaybackResume)
+		r.Post("/api/tracks/{id}/play", s.handlePlayTrack)
+
 		r.Post("/api/clips", s.handleCreateClip)
 		r.Get("/api/clips", s.handleListClips)
 		r.Delete("/api/clips/{id}", s.handleDeleteClip)

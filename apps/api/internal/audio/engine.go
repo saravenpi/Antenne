@@ -10,6 +10,7 @@ import (
 // NowPlaying is the public snapshot of what the station is broadcasting.
 type NowPlaying struct {
 	Live      bool   `json:"live"`
+	Paused    bool   `json:"paused"`
 	Title     string `json:"title"`
 	Artist    string `json:"artist"`
 	TrackID   string `json:"trackId"`
@@ -129,6 +130,7 @@ func (e *Engine) loop() {
 func (e *Engine) NowPlaying() NowPlaying {
 	np := NowPlaying{
 		Live:      e.Live.Active(),
+		Paused:    e.Playlist.Paused(),
 		Listeners: atomic.LoadInt64(&e.listeners),
 	}
 	if item, ok := e.Playlist.Current(); ok {

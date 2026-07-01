@@ -1,16 +1,8 @@
 @import 'tailwindcss';
 
-/* Goga — drop Goga.woff2 into static/fonts/. Falls back gracefully. */
-@font-face {
-	font-family: 'Goga';
-	src: url('/fonts/Goga.woff2') format('woff2');
-	font-weight: 100 900;
-	font-display: swap;
-}
-
 /* Minimalist black & white theme (shadcn-style tokens). */
 @theme {
-	--font-sans: 'Goga', ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
 
 	--color-background: #ffffff;
 	--color-foreground: #0a0a0a;

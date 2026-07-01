@@ -16,6 +16,8 @@
 	let cleaning = $state(false);
 	let cleanError = $state('');
 
+	let controlBusy = $state(false);
+
 	let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 	async function loadTracks() {
@@ -86,6 +88,30 @@
 		}
 	}
 
+	async function runControl(action: () => Promise<NowPlaying>) {
+		if (controlBusy) return;
+		controlBusy = true;
+		try {
+			nowPlaying = await action();
+		} catch (e) {
+			console.error(e);
+		} finally {
+			controlBusy = false;
+		}
+	}
+
+	async function playNow(id: string) {
+		if (controlBusy) return;
+		controlBusy = true;
+		try {
+			nowPlaying = await api.playTrack(id);
+		} catch (e) {
+			console.error(e);
+		} finally {
+			controlBusy = false;
+		}
+	}
+
 	async function move(index: number, dir: -1 | 1) {
 		const target = index + dir;
 		if (target < 0 || target >= tracks.length) return;
@@ -137,6 +163,74 @@
 	{#if cleanError}
 		<p class="mb-6 text-sm text-red-500">{cleanError}</p>
 	{/if}
+
+	<!-- Transport control bar -->
+	<Card class="mb-6 flex flex-wrap items-center gap-3 p-3">
+		<div class="flex items-center gap-1">
+			<Button
+				variant="ghost"
+				size="icon"
+				class="h-9 w-9"
+				aria-label="Précédent"
+				title="Précédent"
+				disabled={controlBusy}
+				onclick={() => runControl(api.playPrevious)}
+			>
+				<Icon icon="lucide:skip-back" width={20} />
+			</Button>
+			{#if nowPlaying?.paused}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-9 w-9 text-green-500"
+					aria-label="Reprendre"
+					title="Reprendre"
+					disabled={controlBusy}
+					onclick={() => runControl(api.resumePlayback)}
+				>
+					<Icon icon="lucide:play" width={22} />
+				</Button>
+			{:else}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-9 w-9"
+					aria-label="Pause"
+					title="Pause"
+					disabled={controlBusy}
+					onclick={() => runControl(api.pausePlayback)}
+				>
+					<Icon icon="lucide:pause" width={22} />
+				</Button>
+			{/if}
+			<Button
+				variant="ghost"
+				size="icon"
+				class="h-9 w-9"
+				aria-label="Suivant"
+				title="Suivant"
+				disabled={controlBusy}
+				onclick={() => runControl(api.playNext)}
+			>
+				<Icon icon="lucide:skip-forward" width={20} />
+			</Button>
+		</div>
+		<div class="min-w-0 flex-1">
+			{#if nowPlaying?.paused}
+				<div class="flex items-center gap-1.5 text-sm font-medium text-[var(--color-muted-foreground)]">
+					<Icon icon="lucide:pause" width={14} class="shrink-0" />
+					<span class="truncate">En pause — {nowPlaying?.title ?? 'silence'}</span>
+				</div>
+			{:else if nowPlaying?.title}
+				<div class="flex items-center gap-1.5 text-sm font-medium text-[var(--color-foreground)]">
+					<Icon icon="lucide:play" width={14} class="shrink-0 text-green-500" />
+					<span class="truncate">{nowPlaying.title}</span>
+				</div>
+			{:else}
+				<span class="text-sm text-[var(--color-muted-foreground)]">Aucune lecture</span>
+			{/if}
+		</div>
+	</Card>
 
 	<!-- Multi-file drop zone -->
 	<div
@@ -220,18 +314,40 @@
 						? 'border-green-500/60 bg-[var(--color-muted)]'
 						: ''}"
 				>
-					<span
-						class="w-6 shrink-0 text-center text-sm tabular-nums text-[var(--color-muted-foreground)]"
+					<Button
+						variant="ghost"
+						size="icon"
+						class="h-9 w-9 shrink-0"
+						aria-label="Lire {track.title}"
+						title="Lire maintenant"
+						disabled={controlBusy}
+						onclick={() => playNow(track.id)}
 					>
-						{i + 1}
-					</span>
-					<Icon
-						icon="lucide:audio-lines"
-						width={20}
-						class="hidden shrink-0 sm:block {isNow
-							? 'text-green-500'
-							: 'text-[var(--color-muted-foreground)]'}"
-					/>
+						<Icon
+							icon="lucide:play"
+							width={18}
+							class={isNow ? 'text-green-500' : ''}
+						/>
+					</Button>
+					{#if isNow}
+						<span
+							class="eq flex h-4 w-6 shrink-0 items-end justify-center gap-0.5 {nowPlaying?.paused
+								? 'eq-paused'
+								: ''}"
+							aria-hidden="true"
+						>
+							<span class="eq-bar"></span>
+							<span class="eq-bar"></span>
+							<span class="eq-bar"></span>
+							<span class="eq-bar"></span>
+						</span>
+					{:else}
+						<span
+							class="w-6 shrink-0 text-center text-sm tabular-nums text-[var(--color-muted-foreground)]"
+						>
+							{i + 1}
+						</span>
+					{/if}
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
 							<span class="truncate font-medium text-[var(--color-foreground)]">
@@ -290,3 +406,47 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.eq-bar {
+		width: 3px;
+		height: 30%;
+		border-radius: 1px;
+		background-color: var(--color-green-500, #22c55e);
+		transform-origin: bottom;
+		animation: eq-bounce 0.9s ease-in-out infinite;
+	}
+	.eq-bar:nth-child(1) {
+		animation-delay: -0.2s;
+	}
+	.eq-bar:nth-child(2) {
+		animation-delay: -0.5s;
+	}
+	.eq-bar:nth-child(3) {
+		animation-delay: -0.1s;
+	}
+	.eq-bar:nth-child(4) {
+		animation-delay: -0.7s;
+	}
+	.eq-paused .eq-bar {
+		animation-play-state: paused;
+		height: 35%;
+	}
+
+	@keyframes eq-bounce {
+		0%,
+		100% {
+			transform: scaleY(0.35);
+		}
+		50% {
+			transform: scaleY(1);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.eq-bar {
+			animation: none;
+			height: 40%;
+		}
+	}
+</style>

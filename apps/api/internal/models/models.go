@@ -54,6 +54,11 @@ type Settings struct {
 	// Background is a CSS `background` value for the public listener page
 	// (color, gradient, or `url(...) center/cover`). Empty = default theme.
 	Background string `json:"-"`
+	// Logo is a custom station logo as an image URL or data URI. Empty = the
+	// built-in default logo icon.
+	Logo string `json:"-"`
+	// Socials is a JSON array of {platform,url} the listener page links to.
+	Socials string `json:"-"`
 }
 
 // Clip is a recorded slice of the live broadcast, encoded to MP3.

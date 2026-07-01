@@ -26,6 +26,7 @@ type Playlist struct {
 	items   []Item
 	index   int
 	current *decoder
+	paused  bool
 }
 
 // NewPlaylist creates an empty playlist bound to the given ffmpeg binary.
@@ -76,6 +77,11 @@ func (p *Playlist) ReadFrame() []byte {
 	if len(p.items) == 0 {
 		return silence()
 	}
+	// Paused: emit silence and leave the decoder untouched. ffmpeg blocks once its
+	// output pipe fills, so playback resumes from the same spot on unpause.
+	if p.paused {
+		return silence()
+	}
 	if p.current == nil {
 		p.startCurrent()
 	}
@@ -92,6 +98,54 @@ func (p *Playlist) ReadFrame() []byte {
 		return silence()
 	}
 	return frame
+}
+
+// Skip jumps to the next track immediately. The next ReadFrame starts it.
+func (p *Playlist) Skip() { p.jump(1) }
+
+// Prev jumps to the previous track immediately.
+func (p *Playlist) Prev() { p.jump(-1) }
+
+func (p *Playlist) jump(dir int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.items) == 0 {
+		return
+	}
+	p.stopCurrent()
+	n := len(p.items)
+	p.index = ((p.index+dir)%n + n) % n
+	p.paused = false
+}
+
+// PlayID jumps straight to the track with the given ID and starts it on the next
+// frame. Returns false when no such track exists in the current list.
+func (p *Playlist) PlayID(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i, it := range p.items {
+		if it.ID == id {
+			p.stopCurrent()
+			p.index = i
+			p.paused = false
+			return true
+		}
+	}
+	return false
+}
+
+// SetPaused pauses or resumes the playlist (dead air while paused).
+func (p *Playlist) SetPaused(v bool) {
+	p.mu.Lock()
+	p.paused = v
+	p.mu.Unlock()
+}
+
+// Paused reports whether playback is currently paused.
+func (p *Playlist) Paused() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.paused
 }
 
 func (p *Playlist) startCurrent() {

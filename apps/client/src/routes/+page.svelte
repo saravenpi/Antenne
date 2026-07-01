@@ -2,9 +2,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Hls from 'hls.js';
 	import Icon from '$lib/components/Icon.svelte';
+	import Logo from '$lib/components/Logo.svelte';
 	import AudioVisualizer from '$lib/components/AudioVisualizer.svelte';
 	import ChatWidget from '$lib/components/ChatWidget.svelte';
-	import { api, type NowPlaying } from '$lib/api';
+	import { api, type NowPlaying, type Social } from '$lib/api';
+	import { socialIcon, socialLabel } from '$lib/socials';
 
 	let audio: HTMLAudioElement;
 	let hls: Hls | null = null;
@@ -20,6 +22,8 @@
 	let muted = $state(false);
 	let bg = $state('');
 	let stationName = $state('Antenne');
+	let logo = $state('');
+	let socials = $state<Social[]>([]);
 
 	const STREAM = '/stream/live.m3u8';
 
@@ -48,11 +52,31 @@
 		graphReady = true;
 	}
 
+	// Called from a user gesture (tap/click). Chrome's autoplay policy requires the
+	// AudioContext to be created/resumed inside a gesture — otherwise it starts
+	// "suspended" and, because the media element is routed through it, no sound
+	// comes out. So the Web Audio graph is built here, not at mount.
 	async function start() {
 		try {
 			setupGraph();
 			await audioCtx?.resume();
 			audio.muted = muted;
+			audio.volume = volume;
+			await audio.play();
+			playing = true;
+			needsGesture = false;
+		} catch {
+			needsGesture = true;
+			playing = false;
+		}
+	}
+
+	// Mount-time attempt: try to play WITHOUT touching Web Audio (no AudioContext
+	// before a gesture). If the browser blocks unmuted autoplay we surface the
+	// "tap to start" control; the graph + visualizer come up on that gesture.
+	async function tryAutoplay() {
+		try {
+			audio.muted = false;
 			audio.volume = volume;
 			await audio.play();
 			playing = true;
@@ -83,7 +107,7 @@
 
 	onMount(() => {
 		attach();
-		start();
+		tryAutoplay();
 		refresh();
 		poll = setInterval(refresh, 4000);
 		api
@@ -91,6 +115,8 @@
 			.then((a) => {
 				bg = a.background;
 				if (a.stationName) stationName = a.stationName;
+				logo = a.logo ?? '';
+				socials = a.socials ?? [];
 			})
 			.catch(() => {});
 	});
@@ -105,9 +131,27 @@
 <audio bind:this={audio} class="hidden"></audio>
 
 <!-- Station identity, top-left -->
-<div class="fixed left-4 top-4 z-40 flex max-w-[55vw] items-center gap-2.5 sm:max-w-none">
-	<Icon icon="solar:podcast-bold-duotone" width={30} class="shrink-0" />
-	<span class="truncate text-xl font-bold tracking-tight">{stationName}</span>
+<div class="fixed left-4 top-4 z-40 flex flex-col gap-1.5 sm:left-6 sm:top-6">
+	<div class="flex max-w-[55vw] items-center gap-2.5 sm:max-w-none">
+		<Logo src={logo} size={30} class="shrink-0" />
+		<span class="truncate text-xl font-bold tracking-tight">{stationName}</span>
+	</div>
+	{#if socials.length}
+		<div class="flex items-center gap-2 pl-0.5">
+			{#each socials as s (s.platform + s.url)}
+				<a
+					href={s.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					aria-label={socialLabel(s.platform)}
+					title={socialLabel(s.platform)}
+					class="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-muted-foreground)] transition hover:text-[var(--color-foreground)]"
+				>
+					<Icon icon={socialIcon(s.platform)} width={18} />
+				</a>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 <main
@@ -115,7 +159,7 @@
 	style={bg ? `background: ${bg};` : ''}
 >
 	<!-- Bars visualizer (same rendering as the régie mic) -->
-	<AudioVisualizer {analyser} variant="bars" class="h-40 w-full max-w-2xl" />
+	<AudioVisualizer {analyser} variant="bars" fallback={playing} class="h-40 w-full max-w-2xl" />
 
 	{#if needsGesture}
 		<p class="text-xs text-[var(--color-muted-foreground)]">Clique pour activer le son 🔊</p>
@@ -139,7 +183,7 @@
 
 <!-- Listener count, floating liquid-glass pill: top-right on mobile, bottom-left from sm up -->
 <div
-	class="fixed right-4 top-4 z-40 flex items-center gap-2 rounded-full border border-border/40 bg-background/55 px-3.5 py-2 text-sm text-[var(--color-muted-foreground)] shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150 sm:right-auto sm:top-auto sm:left-4 sm:[bottom:max(1rem,env(safe-area-inset-bottom))]"
+	class="fixed right-4 top-4 z-40 flex h-12 items-center gap-2 rounded-full border border-border/40 bg-background/55 px-4 text-sm text-[var(--color-muted-foreground)] shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150 sm:right-auto sm:top-auto sm:left-6 sm:[bottom:max(1.5rem,env(safe-area-inset-bottom))]"
 >
 	<Icon icon="lucide:users" width={18} class="shrink-0" />
 	<span class="relative flex h-2 w-2 shrink-0" aria-hidden="true">
@@ -151,11 +195,10 @@
 
 <!-- Sound controls, floating liquid glass at bottom-center -->
 <div
-	class="fixed left-1/2 z-40 flex -translate-x-1/2 items-center gap-3"
-	style="bottom: max(1rem, env(safe-area-inset-bottom))"
+	class="fixed left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 [bottom:max(1rem,env(safe-area-inset-bottom))] sm:[bottom:max(1.5rem,env(safe-area-inset-bottom))]"
 >
 	<div
-		class="flex items-center gap-3 rounded-full border border-border/40 bg-background/55 px-4 py-2.5 shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150"
+		class="flex h-12 items-center gap-3 rounded-full border border-border/40 bg-background/55 px-4 shadow-lg shadow-black/20 ring-1 ring-white/10 backdrop-blur-2xl backdrop-saturate-150"
 	>
 		<Icon
 			icon={muted || volume === 0 ? 'lucide:volume-off' : 'lucide:volume-2'}

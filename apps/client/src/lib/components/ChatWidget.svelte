@@ -9,7 +9,8 @@
 	const NAME_KEY = 'antenne_chatname';
 	const POS_KEY = 'antenne_chatpos';
 
-	let open = $state(true);
+	// Start minimised so the chat doesn't cover the player on first load.
+	let open = $state(false);
 	let name = $state('');
 	let body = $state('');
 	let messages = $state<ChatMessage[]>([]);

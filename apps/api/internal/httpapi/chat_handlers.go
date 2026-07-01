@@ -333,37 +333,64 @@ func (s *Server) handleDeleteRestriction(w http.ResponseWriter, r *http.Request)
 
 // --- REST: settings ---
 
-type settingsJSON struct {
-	StationName string   `json:"stationName"`
-	BannedWords []string `json:"bannedWords"`
-	SlowModeSec int      `json:"slowModeSec"`
-	Background  string   `json:"background"`
+type socialLink struct {
+	Platform string `json:"platform"`
+	URL      string `json:"url"`
 }
 
-func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	st := s.loadSettings()
-	writeJSON(w, http.StatusOK, settingsJSON{
+// parseSocials decodes the stored JSON list, always returning a non-nil slice so
+// the API emits `[]` rather than `null`.
+func parseSocials(raw string) []socialLink {
+	out := []socialLink{}
+	if raw == "" {
+		return out
+	}
+	_ = json.Unmarshal([]byte(raw), &out)
+	return out
+}
+
+type settingsJSON struct {
+	StationName string       `json:"stationName"`
+	BannedWords []string     `json:"bannedWords"`
+	SlowModeSec int          `json:"slowModeSec"`
+	Background  string       `json:"background"`
+	Logo        string       `json:"logo"`
+	Socials     []socialLink `json:"socials"`
+}
+
+func toSettingsJSON(st models.Settings) settingsJSON {
+	return settingsJSON{
 		StationName: st.StationName,
 		BannedWords: parseBannedWords(st.BannedWords),
 		SlowModeSec: st.SlowModeSec,
 		Background:  st.Background,
-	})
+		Logo:        st.Logo,
+		Socials:     parseSocials(st.Socials),
+	}
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, toSettingsJSON(s.loadSettings()))
 }
 
 // handleAppearance is the PUBLIC subset of settings the listener page needs.
 func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 	st := s.loadSettings()
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"stationName": st.StationName,
 		"background":  st.Background,
+		"logo":        st.Logo,
+		"socials":     parseSocials(st.Socials),
 	})
 }
 
 type updateSettingsReq struct {
-	StationName *string   `json:"stationName"`
-	BannedWords *[]string `json:"bannedWords"`
-	SlowModeSec *int      `json:"slowModeSec"`
-	Background  *string   `json:"background"`
+	StationName *string       `json:"stationName"`
+	BannedWords *[]string     `json:"bannedWords"`
+	SlowModeSec *int          `json:"slowModeSec"`
+	Background  *string       `json:"background"`
+	Logo        *string       `json:"logo"`
+	Socials     *[]socialLink `json:"socials"`
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -391,14 +418,16 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if req.Background != nil {
 		st.Background = *req.Background
 	}
+	if req.Logo != nil {
+		st.Logo = *req.Logo
+	}
+	if req.Socials != nil {
+		b, _ := json.Marshal(*req.Socials)
+		st.Socials = string(b)
+	}
 	if err := s.db.Save(&st).Error; err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	writeJSON(w, http.StatusOK, settingsJSON{
-		StationName: st.StationName,
-		BannedWords: parseBannedWords(st.BannedWords),
-		SlowModeSec: st.SlowModeSec,
-		Background:  st.Background,
-	})
+	writeJSON(w, http.StatusOK, toSettingsJSON(st))
 }

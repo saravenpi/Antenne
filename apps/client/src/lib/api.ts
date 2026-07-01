@@ -22,12 +22,15 @@ export function isAuthed(): boolean {
 
 export type NowPlaying = {
 	live: boolean;
+	paused?: boolean;
 	title: string;
 	artist: string;
 	trackId: string;
 	listeners: number;
 	next?: { title: string; artist: string; trackId: string } | null;
 };
+
+export type Social = { platform: string; url: string };
 
 export type Track = {
 	id: string;
@@ -73,11 +76,15 @@ export type Settings = {
 	bannedWords: string[];
 	slowModeSec: number;
 	background: string;
+	logo: string;
+	socials: Social[];
 };
 
 export type Appearance = {
 	stationName: string;
 	background: string;
+	logo: string;
+	socials: Social[];
 };
 
 // Server -> client events on the chat WebSocket.
@@ -140,6 +147,13 @@ export const api = {
 
 	// ---- Live mic ----
 	stopLive: () => req<{ status: string }>('/live/stop', { method: 'POST' }),
+
+	// ---- Playback control (manual DJ overrides) ----
+	playNext: () => req<NowPlaying>('/playback/next', { method: 'POST' }),
+	playPrevious: () => req<NowPlaying>('/playback/previous', { method: 'POST' }),
+	pausePlayback: () => req<NowPlaying>('/playback/pause', { method: 'POST' }),
+	resumePlayback: () => req<NowPlaying>('/playback/resume', { method: 'POST' }),
+	playTrack: (id: string) => req<NowPlaying>(`/tracks/${id}/play`, { method: 'POST' }),
 
 	// ---- Clips ----
 	clips: () => req<Clip[]>('/clips'),

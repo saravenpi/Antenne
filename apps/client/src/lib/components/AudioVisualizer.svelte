@@ -8,11 +8,17 @@
 		analyser = null,
 		variant = 'bars',
 		color = 'rgba(250,250,250,0.92)',
+		fallback = false,
 		class: className = ''
 	}: {
 		analyser?: AnalyserNode | null;
 		variant?: 'bars' | 'radial';
 		color?: string;
+		// When true, animate a synthesized spectrum whenever real analyser data is
+		// unavailable/flat. Firefox for Android and iOS Safari don't expose byte
+		// frequency data for HLS/MSE media elements, so the analyser reads all
+		// zeros there — this keeps the visualizer alive on those browsers.
+		fallback?: boolean;
 		class?: string;
 	} = $props();
 
@@ -84,6 +90,17 @@
 		ctx.closePath();
 	}
 
+	// Fill `data` with a smooth, lively synthetic spectrum driven by time — used
+	// when there's no analyser data to draw (fallback mode).
+	function synth(data: Uint8Array, t: number) {
+		const n = data.length;
+		for (let i = 0; i < n; i++) {
+			const a = Math.sin(t * 0.004 + i * 0.35) * 0.5 + 0.5;
+			const b = Math.sin(t * 0.011 + i * 0.13) * 0.5 + 0.5;
+			data[i] = Math.max(10, Math.floor((a * 0.6 + b * 0.4) * 205));
+		}
+	}
+
 	$effect(() => {
 		cancelAnimationFrame(raf);
 		const cv = canvas;
@@ -91,18 +108,27 @@
 		const ctx = cv.getContext('2d');
 		if (!ctx) return;
 
-		if (!analyser) {
+		// Nothing to show: no live analyser and no fallback requested.
+		if (!analyser && !fallback) {
 			const { w, h, dpr } = resize(cv);
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.clearRect(0, 0, w, h);
 			return;
 		}
 
-		const data = new Uint8Array(analyser.frequencyBinCount);
+		const data = new Uint8Array(analyser ? analyser.frequencyBinCount : 64);
 		const loop = () => {
 			raf = requestAnimationFrame(loop);
 			const { w, h, dpr } = resize(cv);
-			analyser!.getByteFrequencyData(data);
+			if (analyser) {
+				analyser.getByteFrequencyData(data);
+				// Detect a flat/dead analyser (mobile HLS): synthesize instead.
+				let peak = 0;
+				for (let i = 0; i < data.length; i++) if (data[i] > peak) peak = data[i];
+				if (peak < 4 && fallback) synth(data, performance.now());
+			} else {
+				synth(data, performance.now());
+			}
 			if (variant === 'radial') drawRadial(ctx, data, w, h, dpr);
 			else drawBars(ctx, data, w, h, dpr);
 		};

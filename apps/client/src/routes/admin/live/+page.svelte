@@ -1,11 +1,19 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { scale } from 'svelte/transition';
 	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
+	import Input from '$lib/components/ui/Input.svelte';
 	import AudioVisualizer from '$lib/components/AudioVisualizer.svelte';
-	import { api, getToken, type NowPlaying } from '$lib/api';
+	import {
+		api,
+		getToken,
+		chatWsUrl,
+		type NowPlaying,
+		type ChatMessage,
+		type ChatEvent
+	} from '$lib/api';
 
 	// ---- Live mic ----
 	let live = $state(false);
@@ -196,11 +204,91 @@
 		now = await api.nowPlaying().catch(() => now);
 	}
 
+	// ---- Live chat ----
+	let chatMessages = $state<ChatMessage[]>([]);
+	let chatConnected = $state(false);
+	let chatBody = $state('');
+	let chatWs: WebSocket | null = null;
+	let chatReconnect: ReturnType<typeof setTimeout> | null = null;
+	let chatDestroyed = false;
+	let chatScroller: HTMLDivElement | null = null;
+
+	async function chatScrollToBottom() {
+		await tick();
+		if (chatScroller) chatScroller.scrollTop = chatScroller.scrollHeight;
+	}
+
+	function handleChatEvent(ev: ChatEvent) {
+		switch (ev.type) {
+			case 'message':
+				chatMessages = [...chatMessages, ev.message];
+				chatScrollToBottom();
+				break;
+			case 'delete':
+				chatMessages = chatMessages.filter((m) => m.id !== ev.id);
+				break;
+			// 'listeners' / 'error' — nothing to do on the on-air page.
+		}
+	}
+
+	function connectChat() {
+		const url = chatWsUrl();
+		if (!url) return;
+		try {
+			chatWs = new WebSocket(url);
+		} catch {
+			return;
+		}
+		chatWs.onopen = () => (chatConnected = true);
+		chatWs.onmessage = (e) => {
+			try {
+				handleChatEvent(JSON.parse(e.data) as ChatEvent);
+			} catch {
+				// ignore malformed frames
+			}
+		};
+		chatWs.onclose = () => {
+			chatConnected = false;
+			if (chatDestroyed) return;
+			if (chatReconnect) clearTimeout(chatReconnect);
+			chatReconnect = setTimeout(connectChat, 2000);
+		};
+	}
+
+	function send() {
+		const body = chatBody.trim();
+		if (!body || !chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+		chatWs.send(JSON.stringify({ type: 'message', name: 'Régie', body }));
+		chatBody = '';
+	}
+
+	function onChatKey(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			send();
+		}
+	}
+
+	function formatChatTime(iso: string): string {
+		return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+	}
+
 	onMount(() => {
 		refreshNow();
 		nowTimer = setInterval(refreshNow, 5000);
 		refreshDevices();
 		navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
+
+		api
+			.chatHistory()
+			.then((hist) => {
+				chatMessages = hist;
+				chatScrollToBottom();
+			})
+			.catch(() => {
+				/* ignore — history is best-effort */
+			})
+			.finally(connectChat);
 	});
 
 	onDestroy(() => {
@@ -208,6 +296,10 @@
 		clearInterval(nowTimer);
 		clearTimeout(clipTimer);
 		navigator.mediaDevices?.removeEventListener?.('devicechange', refreshDevices);
+
+		chatDestroyed = true;
+		if (chatReconnect) clearTimeout(chatReconnect);
+		chatWs?.close();
 	});
 </script>
 
@@ -335,4 +427,57 @@
 			{/if}
 		</div>
 	{/if}
+
+	<!-- Live chat -->
+	<Card class="mt-6 flex flex-col p-0">
+		<div class="flex items-center gap-2 border-b border-border px-4 py-3 sm:px-5">
+			<Icon icon="lucide:message-circle-more" width={18} class="shrink-0 text-foreground" />
+			<h2 class="text-base font-medium text-foreground">Chat en direct</h2>
+			<span
+				class="ml-auto h-2 w-2 shrink-0 rounded-full {chatConnected
+					? 'bg-green-500'
+					: 'bg-muted-foreground'}"
+				title={chatConnected ? 'Connecté' : 'Déconnecté'}
+				aria-hidden="true"
+			></span>
+		</div>
+
+		<div bind:this={chatScroller} class="max-h-72 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+			{#if chatMessages.length === 0}
+				<p class="py-8 text-center text-sm text-muted-foreground">Aucun message pour l'instant.</p>
+			{:else}
+				<ul class="space-y-3">
+					{#each chatMessages as msg (msg.id)}
+						<li class="min-w-0">
+							<div class="flex flex-wrap items-baseline gap-x-2">
+								<span class="text-sm font-bold text-foreground">{msg.name}</span>
+								<span class="text-[11px] text-muted-foreground">{formatChatTime(msg.createdAt)}</span>
+							</div>
+							<p class="mt-0.5 break-words text-sm text-foreground">{msg.body}</p>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+
+		<div class="border-t border-border p-3">
+			<div class="flex items-end gap-2">
+				<Input
+					bind:value={chatBody}
+					onkeydown={onChatKey}
+					placeholder="Répondre en tant que Régie…"
+					aria-label="Message de la régie"
+				/>
+				<Button
+					size="icon"
+					class="shrink-0"
+					onclick={send}
+					disabled={!chatBody.trim() || !chatConnected}
+					aria-label="Envoyer"
+				>
+					<Icon icon="lucide:send" width={18} />
+				</Button>
+			</div>
+		</div>
+	</Card>
 </div>

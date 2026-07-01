@@ -36,8 +36,15 @@ type Engine struct {
 
 	listeners int64
 	stop      chan struct{}
+	loopDone  chan struct{}
+	started   atomic.Bool
 	once      sync.Once
 }
+
+// maxCatchupFrames caps how many frames the clock will emit in one tick to catch
+// up after a scheduling stall. Beyond this we resync the baseline instead of
+// spewing a burst that would desync the encoder's media timeline.
+const maxCatchupFrames = 8
 
 // timelineEntry records when a track began broadcasting (engine head time), so
 // now-playing can be resolved by the listener's wall-clock accounting for HLS
@@ -65,6 +72,7 @@ func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int)
 		fadeFrames: fade,
 		gain:       1.0,
 		stop:       make(chan struct{}),
+		loopDone:   make(chan struct{}),
 	}
 }
 
@@ -73,56 +81,84 @@ func (e *Engine) Start() error {
 	if err := e.encoder.Start(); err != nil {
 		return err
 	}
+	e.started.Store(true)
 	go e.loop()
 	log.Print("engine: broadcasting")
 	return nil
 }
 
-// Stop halts the loop and the encoder.
+// Stop halts the loop (waiting for it to exit so nothing writes to the encoder
+// concurrently), then the playlist decoder and the encoder.
 func (e *Engine) Stop() {
+	if !e.started.Load() {
+		return
+	}
 	e.once.Do(func() { close(e.stop) })
+	<-e.loopDone
+	e.Playlist.Stop()
 	e.encoder.Stop()
 }
 
+// loop is the broadcast clock. It ticks every 20 ms but paces emission against a
+// monotonic frame counter, so a late tick (GC, scheduler) is caught up and the
+// encoder is always fed at true real time — which keeps listeners' buffers
+// healthy and prevents slow drift between media time and wall-clock.
 func (e *Engine) loop() {
-	ticker := time.NewTicker(FrameMs * time.Millisecond)
+	defer close(e.loopDone)
+	const frameDur = FrameMs * time.Millisecond
+	ticker := time.NewTicker(frameDur)
 	defer ticker.Stop()
 
-	step := 1.0 / float64(e.fadeFrames)
+	start := time.Now()
+	var emitted int64
 	for {
 		select {
 		case <-e.stop:
 			return
 		case <-ticker.C:
-			live := e.Live.Active()
-
-			// Ramp the playlist gain down when live takes over, up when it ends.
-			if live && e.gain > 0 {
-				e.gain -= step
-			} else if !live && e.gain < 1 {
-				e.gain += step
+			target := int64(time.Since(start) / frameDur)
+			if target-emitted > maxCatchupFrames {
+				// Fell badly behind (long stall): resync rather than burst-feed.
+				emitted = target - 1
 			}
-			e.gain = clamp(e.gain)
-
-			var frame []byte
-			switch {
-			case live && e.gain <= 0:
-				frame = e.Live.ReadFrame()
-			case live:
-				// Transition: duck the playlist under the live feed.
-				frame = mix(e.Live.ReadFrame(), scaleFrame(e.Playlist.ReadFrame(), e.gain))
-			default:
-				frame = scaleFrame(e.Playlist.ReadFrame(), e.gain)
-			}
-
-			e.recordTimeline()
-			e.Clips.Write(frame)
-
-			if err := e.encoder.Write(frame); err != nil {
-				log.Printf("engine: encoder write failed: %v", err)
-				return
+			for emitted < target {
+				e.emitFrame()
+				emitted++
 			}
 		}
+	}
+}
+
+// emitFrame mixes one 20 ms frame from the live/playlist sources and hands it to
+// the recorder and encoder. Every source read is non-blocking, so the clock is
+// never held up by decode, network, or disk I/O.
+func (e *Engine) emitFrame() {
+	live := e.Live.Active()
+
+	// Ramp the playlist gain down when live takes over, up when it ends.
+	step := 1.0 / float64(e.fadeFrames)
+	if live && e.gain > 0 {
+		e.gain -= step
+	} else if !live && e.gain < 1 {
+		e.gain += step
+	}
+	e.gain = clamp(e.gain)
+
+	var frame []byte
+	switch {
+	case live && e.gain <= 0:
+		frame = e.Live.ReadFrame()
+	case live:
+		// Transition: duck the playlist under the live feed.
+		frame = mix(e.Live.ReadFrame(), scaleFrame(e.Playlist.ReadFrame(), e.gain))
+	default:
+		frame = scaleFrame(e.Playlist.ReadFrame(), e.gain)
+	}
+
+	e.recordTimeline()
+	e.Clips.Write(frame)
+	if err := e.encoder.Write(frame); err != nil {
+		log.Printf("engine: encoder write failed: %v", err)
 	}
 }
 

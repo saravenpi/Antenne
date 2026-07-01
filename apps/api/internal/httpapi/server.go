@@ -77,6 +77,14 @@ func (s *Server) Router() http.Handler {
 		r.Post("/api/playback/pause", s.handlePlaybackPause)
 		r.Post("/api/playback/resume", s.handlePlaybackResume)
 		r.Post("/api/tracks/{id}/play", s.handlePlayTrack)
+		r.Put("/api/tracks/{id}/collection", s.handleMoveTrack)
+
+		r.Get("/api/collections", s.handleListCollections)
+		r.Post("/api/collections", s.handleCreateCollection)
+		r.Post("/api/collections/clear", s.handleClearActiveCollection)
+		r.Put("/api/collections/{id}", s.handleRenameCollection)
+		r.Delete("/api/collections/{id}", s.handleDeleteCollection)
+		r.Post("/api/collections/{id}/activate", s.handleActivateCollection)
 
 		r.Post("/api/clips", s.handleCreateClip)
 		r.Get("/api/clips", s.handleListClips)
@@ -102,11 +110,25 @@ func (s *Server) Router() http.Handler {
 	return r
 }
 
-// SyncPlaylist loads tracks from the DB (ordered by position) into the engine.
+// SyncPlaylist loads tracks into the engine (ordered by position). When a
+// collection is active, only its tracks play; if that collection is empty (or
+// none is active) the whole library plays.
 func (s *Server) SyncPlaylist() error {
 	var tracks []models.Track
-	if err := s.db.Order("position asc").Find(&tracks).Error; err != nil {
+	var active models.Collection
+	hasActive := s.db.Where("active = ?", true).First(&active).Error == nil
+
+	q := s.db.Order("position asc")
+	if hasActive {
+		q = q.Where("collection_id = ?", active.ID)
+	}
+	if err := q.Find(&tracks).Error; err != nil {
 		return err
+	}
+	if hasActive && len(tracks) == 0 {
+		if err := s.db.Order("position asc").Find(&tracks).Error; err != nil {
+			return err
+		}
 	}
 	items := make([]audio.Item, 0, len(tracks))
 	for _, t := range tracks {

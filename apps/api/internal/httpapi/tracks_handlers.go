@@ -99,6 +99,12 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		DurationSec: s.store.Duration(filename),
 		Position:    maxPos + 1,
 	}
+	// Optionally file the upload straight into a collection.
+	if cidStr := r.FormValue("collectionId"); cidStr != "" {
+		if cid, err := uuid.Parse(cidStr); err == nil {
+			track.CollectionID = &cid
+		}
+	}
 	if cover, ok := s.store.ExtractCover(filename); ok {
 		track.Cover = cover
 	}

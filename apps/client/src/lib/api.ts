@@ -41,6 +41,15 @@ export type Track = {
 	position: number;
 	createdAt: string;
 	coverUrl?: string;
+	collectionId?: string;
+};
+
+export type Collection = {
+	id: string;
+	name: string;
+	position: number;
+	active: boolean;
+	createdAt: string;
 };
 
 export type Clip = {
@@ -134,11 +143,12 @@ export const api = {
 	rescanMetadata: () => req<Track[]>('/tracks/rescan', { method: 'POST' }),
 	deleteTrack: (id: string) => req<void>(`/tracks/${id}`, { method: 'DELETE' }),
 	reorder: (order: string[]) => req<{ status: string }>('/playlist', jsonBody('PUT', { order })),
-	async upload(file: File, title: string, artist: string): Promise<Track> {
+	async upload(file: File, title: string, artist: string, collectionId?: string): Promise<Track> {
 		const form = new FormData();
 		form.set('file', file);
 		form.set('title', title);
 		form.set('artist', artist);
+		if (collectionId) form.set('collectionId', collectionId);
 		const headers = new Headers();
 		const token = getToken();
 		if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -146,6 +156,18 @@ export const api = {
 		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'upload failed');
 		return res.json();
 	},
+
+	// ---- Collections (named playlists / folders) ----
+	collections: () => req<Collection[]>('/collections'),
+	createCollection: (name: string) => req<Collection>('/collections', jsonBody('POST', { name })),
+	renameCollection: (id: string, name: string) =>
+		req<void>(`/collections/${id}`, jsonBody('PUT', { name })),
+	deleteCollection: (id: string) => req<void>(`/collections/${id}`, { method: 'DELETE' }),
+	activateCollection: (id: string) =>
+		req<NowPlaying>(`/collections/${id}/activate`, { method: 'POST' }),
+	clearActiveCollection: () => req<NowPlaying>('/collections/clear', { method: 'POST' }),
+	moveTrack: (id: string, collectionId: string | null) =>
+		req<void>(`/tracks/${id}/collection`, jsonBody('PUT', { collectionId })),
 
 	// ---- Live mic ----
 	stopLive: () => req<{ status: string }>('/live/stop', { method: 'POST' }),

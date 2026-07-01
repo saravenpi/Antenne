@@ -36,6 +36,26 @@ type Track struct {
 	Cover string `json:"-"`
 	// CoverURL is a transient public URL for the cover, set when serializing.
 	CoverURL string `gorm:"-" json:"coverUrl,omitempty"`
+	// CollectionID groups the track into a named playlist/folder (nil = ungrouped).
+	CollectionID *uuid.UUID `gorm:"type:uuid;index" json:"collectionId,omitempty"`
+}
+
+// Collection is a named group of tracks (a folder / sub-playlist). One
+// collection can be marked Active to feed the 24/7 engine on its own; when none
+// is active the engine plays every track.
+type Collection struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name      string    `gorm:"not null" json:"name"`
+	Position  int       `gorm:"index" json:"position"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (c *Collection) BeforeCreate(*gorm.DB) error {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
+	}
+	return nil
 }
 
 func (t *Track) BeforeCreate(*gorm.DB) error {

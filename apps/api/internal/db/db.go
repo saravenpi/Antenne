@@ -22,6 +22,7 @@ func Open(cfg config.Config) (*gorm.DB, error) {
 	if err := gdb.AutoMigrate(
 		&models.Admin{},
 		&models.Track{},
+		&models.Collection{},
 		&models.Settings{},
 		&models.Clip{},
 		&models.ChatMessage{},

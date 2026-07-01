@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 
@@ -185,6 +186,12 @@ func filterBannedWords(body string, words []string) string {
 
 // --- moderation helpers ---
 
+// validIP reports whether s is a syntactically valid IPv4/IPv6 address, so we
+// never store a ban that can never match a real client.
+func validIP(s string) bool {
+	return net.ParseIP(strings.TrimSpace(s)) != nil
+}
+
 func (s *Server) isBanned(ip string) bool {
 	var count int64
 	s.db.Model(&models.Ban{}).Where("ip = ?", ip).Count(&count)
@@ -262,11 +269,24 @@ func (s *Server) handleCreateBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ip := strings.TrimSpace(req.IP)
-	if ip == "" {
-		writeErr(w, http.StatusBadRequest, "ip required")
+	if !validIP(ip) {
+		writeErr(w, http.StatusBadRequest, "invalid ip")
 		return
 	}
-	ban := models.Ban{IP: ip, Reason: strings.TrimSpace(req.Reason)}
+	reason := strings.TrimSpace(req.Reason)
+
+	// Idempotent: re-banning an already-banned IP updates the reason instead of
+	// violating the unique index (which would surface as a spurious 500).
+	var ban models.Ban
+	if s.db.Where("ip = ?", ip).First(&ban).Error == nil {
+		if reason != "" && reason != ban.Reason {
+			s.db.Model(&ban).Update("reason", reason)
+			ban.Reason = reason
+		}
+		writeJSON(w, http.StatusOK, ban)
+		return
+	}
+	ban = models.Ban{IP: ip, Reason: reason}
 	if err := s.db.Create(&ban).Error; err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
@@ -305,11 +325,23 @@ func (s *Server) handleCreateRestriction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ip := strings.TrimSpace(req.IP)
-	if ip == "" {
-		writeErr(w, http.StatusBadRequest, "ip required")
+	if !validIP(ip) {
+		writeErr(w, http.StatusBadRequest, "invalid ip")
 		return
 	}
-	res := models.Restriction{IP: ip, Reason: strings.TrimSpace(req.Reason)}
+	reason := strings.TrimSpace(req.Reason)
+
+	// Idempotent, like bans: avoid a unique-index 500 when re-restricting.
+	var res models.Restriction
+	if s.db.Where("ip = ?", ip).First(&res).Error == nil {
+		if reason != "" && reason != res.Reason {
+			s.db.Model(&res).Update("reason", reason)
+			res.Reason = reason
+		}
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
+	res = models.Restriction{IP: ip, Reason: reason}
 	if err := s.db.Create(&res).Error; err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return

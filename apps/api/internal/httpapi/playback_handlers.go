@@ -12,9 +12,10 @@ import (
 // --- Now playing (public) ---
 
 type nowPlayingItem struct {
-	Title   string `json:"title"`
-	Artist  string `json:"artist"`
-	TrackID string `json:"trackId"`
+	Title    string `json:"title"`
+	Artist   string `json:"artist"`
+	TrackID  string `json:"trackId"`
+	CoverURL string `json:"coverUrl,omitempty"`
 }
 
 type nowPlayingResp struct {
@@ -53,7 +54,7 @@ func (s *Server) currentNowPlaying() nowPlayingResp {
 		Listeners: int64(s.listeners.count()),
 	}
 	if title, artist, trackID, ok := s.engine.NextItem(); ok {
-		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
+		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID, CoverURL: s.coverURLFor(trackID)}
 	}
 	resp.CoverURL = s.coverURLFor(resp.TrackID)
 	return resp
@@ -83,7 +84,7 @@ func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if title, artist, trackID, ok := s.engine.NextItem(); ok {
-		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID}
+		resp.Next = &nowPlayingItem{Title: title, Artist: artist, TrackID: trackID, CoverURL: s.coverURLFor(trackID)}
 	}
 	resp.CoverURL = s.coverURLFor(resp.TrackID)
 

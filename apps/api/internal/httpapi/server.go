@@ -61,6 +61,10 @@ func (s *Server) Router() http.Handler {
 	r.Get("/api/clips/{id}/audio", s.handleClipAudio)
 	r.Get("/api/chat/messages", s.handleChatMessages)
 	r.Handle("/stream/*", s.streamHandler())
+	r.Get("/stream.mp3", s.handleMP3Stream) // continuous MP3 for external players
+	r.Method("HEAD", "/stream.mp3", http.HandlerFunc(s.handleMP3StreamHead))
+	r.Get("/stream.pls", s.handleStreamPLS)
+	r.Get("/stream.m3u", s.handleStreamM3U)
 
 	// Admin-only control plane
 	r.Group(func(r chi.Router) {

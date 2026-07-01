@@ -29,6 +29,15 @@ services:
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-*}
       STORAGE_DIR: /data/tracks
       STREAM_DIR: /data/stream
+      # Continuous MP3 broadcast (ICY/Icecast-style) for external players.
+      MP3_STREAM_ENABLED: ${MP3_STREAM_ENABLED:-true}
+      MP3_BITRATE_K: ${MP3_BITRATE_K:-128}
+      ICY_METAINT: ${ICY_METAINT:-16000}
+      STATION_NAME: ${STATION_NAME:-Antenne}
+      STATION_GENRE: ${STATION_GENRE:-Various}
+      STATION_URL: ${STATION_URL:-}
+      STATION_DESCRIPTION: ${STATION_DESCRIPTION:-}
+      STATION_PUBLIC: ${STATION_PUBLIC:-false}
     volumes:
       - media-data:/data
     depends_on:

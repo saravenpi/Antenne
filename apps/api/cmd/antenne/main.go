@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/saravenpi/antenne/internal/audio"
 	"github.com/saravenpi/antenne/internal/auth"
@@ -31,11 +37,15 @@ func main() {
 		log.Fatalf("clips: %v", err)
 	}
 
-	// Audio engine: playlist + live source -> mixer -> HLS encoder.
+	// Audio engine: playlist + live source -> mixer -> HLS (browser) + MP3 (external players).
 	playlist := audio.NewPlaylist(cfg.FFmpegBin)
 	live := audio.NewLiveSource(cfg.FFmpegBin)
-	encoder := audio.NewHLSEncoder(cfg.FFmpegBin, cfg.StreamDir, cfg.HLSSegmentS, cfg.HLSListSize)
-	engine := audio.NewEngine(playlist, live, encoder, cfg.CrossfadeMs)
+	hls := audio.NewHLSEncoder(cfg.FFmpegBin, cfg.StreamDir, cfg.HLSSegmentS, cfg.HLSListSize)
+	var mp3 *audio.MP3Encoder
+	if cfg.MP3Enabled {
+		mp3 = audio.NewMP3Encoder(cfg.FFmpegBin, cfg.MP3BitrateK)
+	}
+	engine := audio.NewEngine(playlist, live, hls, mp3, cfg.CrossfadeMs)
 
 	authSvc := auth.New(cfg.JWTSecret)
 	srv := httpapi.NewServer(cfg, database, authSvc, st, clipsSvc, engine)
@@ -46,11 +56,27 @@ func main() {
 	if err := engine.Start(); err != nil {
 		log.Fatalf("engine: %v", err)
 	}
-	defer engine.Stop()
 
 	addr := ":" + cfg.Port
+	httpSrv := &http.Server{Addr: addr, Handler: srv.Router()}
+
+	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting connections then tear
+	// the engine down so ffmpeg children are killed and reaped (a bare
+	// log.Fatalf/os.Exit would skip that and orphan them).
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+		log.Print("shutting down…")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(ctx)
+		engine.Stop()
+	}()
+
 	log.Printf("Antenne on the air — http://localhost%s", addr)
-	if err := http.ListenAndServe(addr, srv.Router()); err != nil {
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		engine.Stop()
 		log.Fatalf("http: %v", err)
 	}
 }

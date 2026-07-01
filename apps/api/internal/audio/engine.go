@@ -25,7 +25,8 @@ type Engine struct {
 	Playlist *Playlist
 	Live     *LiveSource
 	Clips    *ClipBuffer
-	encoder  *HLSEncoder
+	hls      *HLSEncoder
+	mp3      *MP3Encoder // optional: continuous MP3 broadcast for external players
 
 	fadeFrames int     // frames over which to fade between sources
 	gain       float64 // current playlist gain (1 = full, 0 = fully ducked)
@@ -58,8 +59,9 @@ type timelineEntry struct {
 
 const maxTimelineEntries = 300
 
-// NewEngine wires the sources and encoder together.
-func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int) *Engine {
+// NewEngine wires the sources and encoders together. mp3 may be nil to broadcast
+// HLS only.
+func NewEngine(pl *Playlist, live *LiveSource, hls *HLSEncoder, mp3 *MP3Encoder, crossfadeMs int) *Engine {
 	fade := crossfadeMs / FrameMs
 	if fade < 1 {
 		fade = 1
@@ -68,7 +70,8 @@ func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int)
 		Playlist:   pl,
 		Live:       live,
 		Clips:      NewClipBuffer(),
-		encoder:    enc,
+		hls:        hls,
+		mp3:        mp3,
 		fadeFrames: fade,
 		gain:       1.0,
 		stop:       make(chan struct{}),
@@ -76,10 +79,16 @@ func NewEngine(pl *Playlist, live *LiveSource, enc *HLSEncoder, crossfadeMs int)
 	}
 }
 
-// Start launches the encoder and the real-time mixing loop.
+// Start launches the encoders and the real-time mixing loop.
 func (e *Engine) Start() error {
-	if err := e.encoder.Start(); err != nil {
+	if err := e.hls.Start(); err != nil {
 		return err
+	}
+	if e.mp3 != nil {
+		if err := e.mp3.Start(); err != nil {
+			e.hls.Stop()
+			return err
+		}
 	}
 	e.started.Store(true)
 	go e.loop()
@@ -96,8 +105,15 @@ func (e *Engine) Stop() {
 	e.once.Do(func() { close(e.stop) })
 	<-e.loopDone
 	e.Playlist.Stop()
-	e.encoder.Stop()
+	e.hls.Stop()
+	if e.mp3 != nil {
+		e.mp3.Stop()
+	}
 }
+
+// MP3 returns the continuous-MP3 encoder (nil if disabled) so the HTTP layer can
+// subscribe listeners to its broadcast.
+func (e *Engine) MP3() *MP3Encoder { return e.mp3 }
 
 // loop is the broadcast clock. It ticks every 20 ms but paces emission against a
 // monotonic frame counter, so a late tick (GC, scheduler) is caught up and the
@@ -157,8 +173,13 @@ func (e *Engine) emitFrame() {
 
 	e.recordTimeline()
 	e.Clips.Write(frame)
-	if err := e.encoder.Write(frame); err != nil {
-		log.Printf("engine: encoder write failed: %v", err)
+	if err := e.hls.Write(frame); err != nil {
+		log.Printf("engine: hls write failed: %v", err)
+	}
+	if e.mp3 != nil {
+		if err := e.mp3.Write(frame); err != nil {
+			log.Printf("engine: mp3 write failed: %v", err)
+		}
 	}
 }
 

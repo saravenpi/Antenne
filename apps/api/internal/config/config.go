@@ -27,6 +27,16 @@ type Config struct {
 	CrossfadeMs int
 	HLSSegmentS int
 	HLSListSize int
+
+	// Continuous MP3 broadcast (ICY/Icecast-style) for external players.
+	MP3Enabled    bool
+	MP3BitrateK   int
+	ICYMetaInt    int
+	StationName   string
+	StationGenre  string
+	StationURL    string
+	StationDesc   string
+	StationPublic bool
 }
 
 // Load reads configuration from the environment, applying an optional .env file
@@ -48,6 +58,14 @@ func Load() Config {
 		CrossfadeMs:   envInt("CROSSFADE_MS", 2000),
 		HLSSegmentS:   envInt("HLS_SEGMENT_SEC", 3),
 		HLSListSize:   envInt("HLS_LIST_SIZE", 6),
+		MP3Enabled:    envBool("MP3_STREAM_ENABLED", true),
+		MP3BitrateK:   envInt("MP3_BITRATE_K", 128),
+		ICYMetaInt:    envInt("ICY_METAINT", 16000),
+		StationName:   env("STATION_NAME", "Antenne"),
+		StationGenre:  env("STATION_GENRE", "Various"),
+		StationURL:    env("STATION_URL", ""),
+		StationDesc:   env("STATION_DESCRIPTION", ""),
+		StationPublic: envBool("STATION_PUBLIC", false),
 	}
 	return c
 }
@@ -55,6 +73,18 @@ func Load() Config {
 func env(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			log.Printf("config: invalid bool for %s=%q, using %v", key, v, fallback)
+			return fallback
+		}
+		return b
 	}
 	return fallback
 }

@@ -337,6 +337,7 @@ type settingsJSON struct {
 	StationName string   `json:"stationName"`
 	BannedWords []string `json:"bannedWords"`
 	SlowModeSec int      `json:"slowModeSec"`
+	Background  string   `json:"background"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -345,6 +346,16 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		StationName: st.StationName,
 		BannedWords: parseBannedWords(st.BannedWords),
 		SlowModeSec: st.SlowModeSec,
+		Background:  st.Background,
+	})
+}
+
+// handleAppearance is the PUBLIC subset of settings the listener page needs.
+func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
+	st := s.loadSettings()
+	writeJSON(w, http.StatusOK, map[string]string{
+		"stationName": st.StationName,
+		"background":  st.Background,
 	})
 }
 
@@ -352,6 +363,7 @@ type updateSettingsReq struct {
 	StationName *string   `json:"stationName"`
 	BannedWords *[]string `json:"bannedWords"`
 	SlowModeSec *int      `json:"slowModeSec"`
+	Background  *string   `json:"background"`
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +388,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if req.SlowModeSec != nil {
 		st.SlowModeSec = *req.SlowModeSec
 	}
+	if req.Background != nil {
+		st.Background = *req.Background
+	}
 	if err := s.db.Save(&st).Error; err != nil {
 		writeErr(w, http.StatusInternalServerError, "db error")
 		return
@@ -384,5 +399,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		StationName: st.StationName,
 		BannedWords: parseBannedWords(st.BannedWords),
 		SlowModeSec: st.SlowModeSec,
+		Background:  st.Background,
 	})
 }

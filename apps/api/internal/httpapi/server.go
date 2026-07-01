@@ -22,18 +22,20 @@ import (
 
 // Server holds the HTTP dependencies for the control plane and stream endpoints.
 type Server struct {
-	cfg    config.Config
-	db     *gorm.DB
-	auth   *auth.Service
-	store  *store.Store
-	clips  *clips.Service
-	engine *audio.Engine
-	chat   *chatHub
+	cfg       config.Config
+	db        *gorm.DB
+	auth      *auth.Service
+	store     *store.Store
+	clips     *clips.Service
+	engine    *audio.Engine
+	chat      *chatHub
+	listeners *listenerTracker
 }
 
 func NewServer(cfg config.Config, db *gorm.DB, authSvc *auth.Service, st *store.Store, clipsSvc *clips.Service, engine *audio.Engine) *Server {
 	s := &Server{cfg: cfg, db: db, auth: authSvc, store: st, clips: clipsSvc, engine: engine}
 	s.chat = newChatHub()
+	s.listeners = newListenerTracker()
 	go s.chat.run()
 	return s
 }
@@ -54,6 +56,7 @@ func (s *Server) Router() http.Handler {
 	// Public
 	r.Post("/api/auth/login", s.handleLogin)
 	r.Get("/api/now-playing", s.handleNowPlaying)
+	r.Get("/api/appearance", s.handleAppearance)
 	r.Get("/api/clips/{id}/audio", s.handleClipAudio)
 	r.Get("/api/chat/messages", s.handleChatMessages)
 	r.Handle("/stream/*", s.streamHandler())
@@ -110,10 +113,17 @@ func (s *Server) SyncPlaylist() error {
 	return nil
 }
 
-// streamHandler serves the generated HLS directory (manifest + segments).
+// streamHandler serves the generated HLS directory (manifest + segments) and
+// counts distinct listeners by IP on each manifest request.
 func (s *Server) streamHandler() http.Handler {
 	fs := http.FileServer(http.Dir(s.cfg.StreamDir))
-	return http.StripPrefix("/stream/", noCache(fs))
+	stripped := http.StripPrefix("/stream/", noCache(fs))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			s.listeners.hit(clientIP(r))
+		}
+		stripped.ServeHTTP(w, r)
+	})
 }
 
 func noCache(next http.Handler) http.Handler {

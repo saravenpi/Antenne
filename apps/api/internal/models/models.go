@@ -51,6 +51,9 @@ type Settings struct {
 	// via BannedWordsList.
 	BannedWords string `json:"-"`
 	SlowModeSec int    `gorm:"default:2" json:"slowModeSec"`
+	// Background is a CSS `background` value for the public listener page
+	// (color, gradient, or `url(...) center/cover`). Empty = default theme.
+	Background string `json:"-"`
 }
 
 // Clip is a recorded slice of the live broadcast, encoded to MP3.

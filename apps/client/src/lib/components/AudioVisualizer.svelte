@@ -111,7 +111,10 @@
 		return () => cancelAnimationFrame(raf);
 	});
 
-	onDestroy(() => cancelAnimationFrame(raf));
+	onDestroy(() => {
+		// onDestroy also runs during SSR teardown, where rAF APIs don't exist.
+		if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(raf);
+	});
 </script>
 
 <canvas bind:this={canvas} class={className}></canvas>

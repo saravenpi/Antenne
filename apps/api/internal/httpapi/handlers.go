@@ -67,7 +67,7 @@ func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
 		Title:     np.Title,
 		Artist:    np.Artist,
 		TrackID:   np.TrackID,
-		Listeners: np.Listeners,
+		Listeners: int64(s.listeners.count()),
 	}
 
 	// Optional wall-clock resolution: `at` is unix millis of the listener's

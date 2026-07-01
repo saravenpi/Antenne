@@ -72,6 +72,12 @@ export type Settings = {
 	stationName: string;
 	bannedWords: string[];
 	slowModeSec: number;
+	background: string;
+};
+
+export type Appearance = {
+	stationName: string;
+	background: string;
 };
 
 // Server -> client events on the chat WebSocket.
@@ -110,6 +116,7 @@ export const api = {
 	// ---- Playback / station ----
 	nowPlaying: (atMillis?: number) =>
 		req<NowPlaying>('/now-playing' + (atMillis ? `?at=${atMillis}` : '')),
+	appearance: () => req<Appearance>('/appearance'),
 	login: (username: string, password: string) =>
 		req<{ token: string; username: string }>('/auth/login', jsonBody('POST', { username, password })),
 

@@ -1,6 +1,13 @@
-node_modules
-.svelte-kit
-build
-.gocache
+# Never ship local (host-arch) build artefacts into the image — they would
+# clobber the freshly installed Linux dependencies. Match at every depth.
+**/node_modules
+**/.svelte-kit
+**/build
+**/bin
+**/.gocache
+**/.env
+**/.DS_Store
+.git
 data
+storage
 .local

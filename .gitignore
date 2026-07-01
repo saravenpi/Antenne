@@ -13,11 +13,12 @@ apps/client/.env
 # Local dev database
 .local/
 
-# Uploaded media & generated stream segments (runtime data)
+# Uploaded media & generated stream segments (runtime data).
+# NB: HLS segments are *.ts — scope to the runtime dirs so we don't ignore
+# TypeScript source files.
 data/
 storage/
-*.m3u8
-*.ts
+/apps/api/data/
 
 # OS / editor
 .DS_Store

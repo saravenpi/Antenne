@@ -58,3 +58,9 @@ volumes:
 networks:
   dokploy-network:
     external: true
+  # Dokploy appends `- default` to every service that has a domain. The server's
+  # Docker address pool is exhausted, so alias the default network onto the
+  # already-allocated dokploy-network instead of letting Compose create a new one.
+  default:
+    external: true
+    name: dokploy-network

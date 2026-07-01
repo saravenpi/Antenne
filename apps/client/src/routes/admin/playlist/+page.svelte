@@ -721,12 +721,6 @@
 							<span class="eq-bar"></span>
 							<span class="eq-bar"></span>
 						</span>
-					{:else}
-						<span
-							class="w-6 shrink-0 text-center text-sm tabular-nums text-[var(--color-muted-foreground)]"
-						>
-							{i + 1}
-						</span>
 					{/if}
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">

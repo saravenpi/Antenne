@@ -84,6 +84,4 @@
 		<Icon icon="solar:users-group-rounded-bold-duotone" width={18} />
 		<span>{np?.listeners ?? 0} à l'écoute</span>
 	</div>
-
-	<a href="/admin" class="text-xs text-[var(--color-muted-foreground)] hover:underline">Console admin</a>
 </main>

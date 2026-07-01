@@ -10,6 +10,7 @@
 	let username = $state('');
 	let password = $state('');
 	let error = $state('');
+	let busy = $state(false);
 
 	let tracks = $state<Track[]>([]);
 	let file = $state<FileList | null>(null);
@@ -23,15 +24,19 @@
 	let recorder: MediaRecorder | null = null;
 	let micStream: MediaStream | null = null;
 
-	async function login() {
+	async function login(e?: SubmitEvent) {
+		e?.preventDefault();
 		error = '';
+		busy = true;
 		try {
 			const res = await api.login(username, password);
 			setToken(res.token);
 			loggedIn = true;
 			await loadTracks();
-		} catch (e) {
-			error = (e as Error).message;
+		} catch (err) {
+			error = (err as Error).message;
+		} finally {
+			busy = false;
 		}
 	}
 
@@ -117,37 +122,110 @@
 			loadTracks();
 		}
 	});
+
+	const year = new Date().getFullYear();
 </script>
 
-<main class="mx-auto max-w-2xl px-6 py-12">
-	<header class="mb-10 flex items-center justify-between">
-		<a href="/" class="flex items-center gap-2">
-			<Icon icon="solar:podcast-bold-duotone" width={32} />
-			<span class="text-xl font-bold">Antenne <span class="text-[var(--color-muted-foreground)]">· admin</span></span>
-		</a>
-		{#if loggedIn}
-			<Button variant="ghost" size="sm" onclick={logout}>Déconnexion</Button>
-		{/if}
-	</header>
+<svelte:head>
+	<title>Régie — Antenne</title>
+</svelte:head>
 
-	{#if !loggedIn}
-		<Card class="mx-auto max-w-sm">
-			<h2 class="mb-4 text-lg font-semibold">Connexion</h2>
-			<div class="flex flex-col gap-3">
-				<Input placeholder="Identifiant" bind:value={username} />
-				<Input type="password" placeholder="Mot de passe" bind:value={password} />
-				{#if error}<p class="text-sm text-red-500">{error}</p>{/if}
-				<Button onclick={login}>Entrer en régie</Button>
+{#if !loggedIn}
+	<!-- Split-screen login (Nuage style) -->
+	<div class="flex min-h-screen">
+		<div class="hidden flex-col bg-black px-12 py-10 lg:flex lg:w-1/2">
+			<a href="/" class="mb-auto flex items-center gap-3">
+				<Icon icon="solar:podcast-bold-duotone" width={28} class="text-white" />
+				<span class="text-xl font-bold tracking-tight text-white">Antenne</span>
+			</a>
+
+			<div class="mb-auto">
+				<h2 class="text-4xl font-bold leading-tight tracking-tight text-white">
+					À toi<br />l'antenne.
+				</h2>
+				<p class="mt-4 max-w-xs text-sm leading-relaxed text-white/50">
+					La régie d'Antenne — uploade tes sons, prends le micro et diffuse en direct 24/7.
+				</p>
 			</div>
-		</Card>
-	{:else}
+
+			<p class="text-xs text-white/30">© {year} Antenne · Facile Studio</p>
+		</div>
+
+		<div class="flex w-full flex-col items-center justify-center bg-background px-8 py-12 lg:w-1/2">
+			<div class="w-full max-w-sm">
+				<div class="mb-8 flex items-center gap-2 lg:hidden">
+					<Icon icon="solar:podcast-bold-duotone" width={26} />
+					<span class="text-lg font-bold tracking-tight">Antenne</span>
+				</div>
+
+				<div class="mb-8">
+					<h1 class="text-2xl font-bold tracking-tight text-foreground">Bienvenue en régie</h1>
+					<p class="mt-1.5 text-sm text-muted-foreground">Connecte-toi pour prendre l'antenne.</p>
+				</div>
+
+				<form onsubmit={login} class="space-y-4">
+					<div class="space-y-1.5">
+						<label for="username" class="text-sm font-medium leading-none">Identifiant</label>
+						<input
+							id="username"
+							type="text"
+							bind:value={username}
+							placeholder="admin"
+							required
+							autocomplete="username"
+							class="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+						/>
+					</div>
+
+					<div class="space-y-1.5">
+						<label for="password" class="text-sm font-medium leading-none">Mot de passe</label>
+						<input
+							id="password"
+							type="password"
+							bind:value={password}
+							placeholder="••••••••"
+							required
+							autocomplete="current-password"
+							class="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+						/>
+					</div>
+
+					{#if error}
+						<p class="text-sm text-red-500">{error}</p>
+					{/if}
+
+					<button
+						type="submit"
+						disabled={busy}
+						class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+					>
+						{busy ? 'Connexion…' : 'Entrer en régie'}
+					</button>
+				</form>
+			</div>
+		</div>
+	</div>
+{:else}
+	<main class="mx-auto max-w-2xl px-6 py-12">
+		<header class="mb-10 flex items-center justify-between">
+			<a href="/" class="flex items-center gap-2">
+				<Icon icon="solar:podcast-bold-duotone" width={32} />
+				<span class="text-xl font-bold"
+					>Antenne <span class="text-[var(--color-muted-foreground)]">· régie</span></span
+				>
+			</a>
+			<Button variant="ghost" size="sm" onclick={logout}>Déconnexion</Button>
+		</header>
+
 		<!-- Prise d'antenne -->
 		<Card class="mb-8">
 			<div class="flex items-center justify-between">
 				<div>
 					<h2 class="text-lg font-semibold">Prise d'antenne</h2>
 					<p class="text-sm text-[var(--color-muted-foreground)]">
-						{live ? 'Tu es en direct par-dessus la playlist.' : 'La playlist tourne. Prends le micro pour passer en direct.'}
+						{live
+							? 'Tu es en direct par-dessus la playlist.'
+							: 'La playlist tourne. Prends le micro pour passer en direct.'}
 					</p>
 				</div>
 				{#if live}
@@ -207,5 +285,5 @@
 		</Card>
 
 		{#if error}<p class="mt-4 text-sm text-red-500">{error}</p>{/if}
-	{/if}
-</main>
+	</main>
+{/if}

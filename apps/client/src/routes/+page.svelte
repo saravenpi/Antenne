@@ -30,12 +30,49 @@
 
 	function attach() {
 		if (Hls.isSupported()) {
-			hls = new Hls({ lowLatencyMode: true });
+			// The backend is standard (not low-latency) HLS, so DON'T ride the live
+			// edge: keep a few segments of buffer. Low-latency mode left almost no
+			// cushion, so any server pacing hiccup (e.g. the brief stall while ffmpeg
+			// spawns the next track's decoder) made playback stall and cut out.
+			hls = new Hls({
+				lowLatencyMode: false,
+				liveSyncDurationCount: 4,
+				liveMaxLatencyDurationCount: 12,
+				maxBufferLength: 30,
+				backBufferLength: 30
+			});
 			hls.loadSource(STREAM);
 			hls.attachMedia(audio);
+			// Recover from transient network/media errors instead of dying.
+			hls.on(Hls.Events.ERROR, (_e, data) => {
+				if (!data.fatal) return;
+				if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls?.startLoad();
+				else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls?.recoverMediaError();
+				else {
+					hls?.destroy();
+					attach();
+					if (playing) audio.play().catch(() => {});
+				}
+			});
 		} else {
 			audio.src = STREAM; // Safari native HLS
 		}
+	}
+
+	// If playback stalls (or the tab was backgrounded and fell far behind), nudge
+	// back toward the live edge and resume.
+	function nudgeLive() {
+		if (!playing) return;
+		try {
+			const s = audio.seekable;
+			if (s.length) {
+				const edge = s.end(s.length - 1);
+				if (edge - audio.currentTime > 12) audio.currentTime = edge - 3;
+			}
+		} catch {
+			/* ignore */
+		}
+		audio.play().catch(() => {});
 	}
 
 	function setupGraph() {
@@ -53,13 +90,34 @@
 		graphReady = true;
 	}
 
+	// Build + resume the Web Audio graph. Safe to call repeatedly; must be invoked
+	// from within a user gesture (autoplay policy).
+	function ensureGraph() {
+		if (graphReady) return;
+		try {
+			setupGraph();
+		} catch {
+			return;
+		}
+		audioCtx?.resume().catch(() => {});
+	}
+
+	// Autoplay can succeed silently (high media-engagement) without the play
+	// button ever being pressed — so the graph is never built and the visualizer
+	// has no analyser data. Build it on the first user interaction anywhere.
+	function primeGraph() {
+		ensureGraph();
+		if (graphReady && typeof window !== 'undefined')
+			window.removeEventListener('pointerdown', primeGraph, true);
+	}
+
 	// Called from a user gesture (tap/click). Chrome's autoplay policy requires the
 	// AudioContext to be created/resumed inside a gesture — otherwise it starts
 	// "suspended" and, because the media element is routed through it, no sound
 	// comes out. So the Web Audio graph is built here, not at mount.
 	async function start() {
 		try {
-			setupGraph();
+			ensureGraph();
 			await audioCtx?.resume();
 			audio.muted = muted;
 			audio.volume = volume;
@@ -109,6 +167,8 @@
 	onMount(() => {
 		attach();
 		tryAutoplay();
+		window.addEventListener('pointerdown', primeGraph, true);
+		audio.addEventListener('stalled', nudgeLive);
 		refresh();
 		poll = setInterval(refresh, 4000);
 		api
@@ -124,6 +184,8 @@
 
 	onDestroy(() => {
 		clearInterval(poll);
+		if (typeof window !== 'undefined') window.removeEventListener('pointerdown', primeGraph, true);
+		audio?.removeEventListener('stalled', nudgeLive);
 		hls?.destroy();
 		audioCtx?.close();
 	});

@@ -18,6 +18,29 @@
 	let audioCtx: AudioContext | null = null;
 	let analyser = $state<AnalyserNode | null>(null);
 
+	// Safari exposes AudioContext under a webkit prefix on older iOS/macOS.
+	function newAudioContext(): AudioContext {
+		const Ctx =
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+		return new Ctx();
+	}
+
+	// Safari's MediaRecorder can't produce audio/webm — it only does audio/mp4
+	// (AAC). Pick the first container the current browser actually supports; the
+	// server decodes whatever arrives via ffmpeg, so any of these works.
+	function pickRecorderMime(): string | undefined {
+		const types = [
+			'audio/webm;codecs=opus',
+			'audio/webm',
+			'audio/mp4;codecs=opus',
+			'audio/mp4',
+			'audio/aac'
+		];
+		if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return undefined;
+		return types.find((t) => MediaRecorder.isTypeSupported(t));
+	}
+
 	// ---- Mic input selection ----
 	let devices = $state<MediaDeviceInfo[]>([]);
 	let selectedDeviceId = $state('');
@@ -60,7 +83,7 @@
 				audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
 			});
 			refreshDevices();
-			audioCtx = new AudioContext();
+			audioCtx = newAudioContext();
 			const src = audioCtx.createMediaStreamSource(micStream);
 			const an = audioCtx.createAnalyser();
 			an.fftSize = 256;
@@ -70,7 +93,8 @@
 			ws = new WebSocket(`${proto}://${location.host}/api/live/ingest?token=${getToken()}`);
 			ws.binaryType = 'arraybuffer';
 			ws.onopen = () => {
-				recorder = new MediaRecorder(micStream!, { mimeType: 'audio/webm;codecs=opus' });
+				const mime = pickRecorderMime();
+				recorder = new MediaRecorder(micStream!, mime ? { mimeType: mime } : undefined);
 				recorder.ondataavailable = (ev) => {
 					if (ev.data.size > 0 && ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
 				};
@@ -136,7 +160,10 @@
 			}
 		});
 
-		await api.stopLive().catch(() => {});
+		// No explicit /live/stop call here: closing the socket makes the server
+		// drain ffmpeg's buffer in-order (after the final chunk is written), so the
+		// tail of the take airs in full. A POST here could race ahead and close the
+		// decoder's stdin early, cutting the last words.
 		stopping = false;
 	}
 

@@ -35,7 +35,10 @@
 
 	function setupGraph() {
 		if (graphReady) return;
-		audioCtx = new AudioContext();
+		const Ctx =
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+		audioCtx = new Ctx();
 		const src = audioCtx.createMediaElementSource(audio);
 		const an = audioCtx.createAnalyser();
 		an.fftSize = 512;

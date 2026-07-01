@@ -298,6 +298,7 @@
 				: 'bg-[var(--color-muted)] text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]'}"
 			onclick={() => selectCollection(null)}
 		>
+			<Icon icon="lucide:library" width={14} class="shrink-0" />
 			Toutes
 		</button>
 		{#each collections as c (c.id)}
@@ -392,7 +393,10 @@
 					<Icon icon="lucide:check" width={16} />
 					Enregistrer
 				</Button>
-				<Button variant="ghost" onclick={() => (renaming = false)}>Annuler</Button>
+				<Button variant="ghost" onclick={() => (renaming = false)}>
+					<Icon icon="lucide:x" width={16} />
+					Annuler
+				</Button>
 			{:else}
 				<Button variant="outline" onclick={startRename}>
 					<Icon icon="lucide:pencil" width={16} />
@@ -407,7 +411,10 @@
 						<Icon icon="lucide:trash-2" width={16} />
 						Confirmer ?
 					</Button>
-					<Button variant="ghost" onclick={() => (confirmingDelete = false)}>Annuler</Button>
+					<Button variant="ghost" onclick={() => (confirmingDelete = false)}>
+						<Icon icon="lucide:x" width={16} />
+						Annuler
+					</Button>
 				{:else}
 					<Button
 						variant="outline"

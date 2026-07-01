@@ -114,8 +114,22 @@
 			return;
 		}
 		if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
-		if (ctx.state === 'running') connectGraph(ctx);
-		else ctx.close().catch(() => {});
+		// Another path (a gesture) may have built the graph during the await.
+		if (graphReady) {
+			ctx.close().catch(() => {});
+			return;
+		}
+		if (ctx.state === 'running') {
+			try {
+				connectGraph(ctx);
+			} catch {
+				// createMediaElementSource can only run once; if it lost the race, drop
+				// this context and keep the element on its own output path.
+				ctx.close().catch(() => {});
+			}
+		} else {
+			ctx.close().catch(() => {});
+		}
 	}
 
 	// Build + resume the Web Audio graph. Safe to call repeatedly; must be invoked
@@ -202,6 +216,12 @@
 			if (playing) await tryGraphNoGesture();
 		})();
 		for (const ev of GESTURES) window.addEventListener(ev, primeGraph, true);
+		// When playback (re)starts, try once more to wire the analyser without a
+		// gesture — high-engagement origins allow it, so the bars react on their
+		// own; otherwise the first tap anywhere still connects it.
+		audio.addEventListener('playing', () => {
+			if (!graphReady) tryGraphNoGesture();
+		});
 		audio.addEventListener('stalled', nudgeLive);
 		refresh();
 		poll = setInterval(refresh, 4000);
@@ -231,18 +251,20 @@
 <StationHeader {logo} {stationName} {socials} />
 
 <main
-	class="flex min-h-screen w-full flex-col items-center justify-center gap-8 px-6 py-12"
+	class="flex min-h-screen w-full flex-col items-center justify-center gap-8 px-6 pb-32 pt-24 sm:pb-36 sm:pt-28"
 	style={bg ? `background: ${bg};` : ''}
 >
-	<!-- Bars visualizer (same rendering as the régie mic) -->
-	<AudioVisualizer {analyser} variant="bars" fallback={playing} class="h-40 w-full max-w-2xl" />
+	<div class="flex w-full max-w-2xl flex-col items-center gap-8">
+		<!-- Bars visualizer (same rendering as the régie mic) -->
+		<AudioVisualizer {analyser} variant="bars" fallback={playing} class="h-40 w-full" />
 
-	{#if needsGesture}
-		<p class="text-xs text-[var(--color-muted-foreground)]">Clique pour activer le son 🔊</p>
-	{/if}
+		{#if needsGesture}
+			<p class="text-xs text-[var(--color-muted-foreground)]">Clique pour activer le son 🔊</p>
+		{/if}
 
-	<!-- Now playing -->
-	<NowPlayingBlock {np} />
+		<!-- Now playing -->
+		<NowPlayingBlock {np} />
+	</div>
 </main>
 
 <!-- Listener count, floating liquid-glass pill: top-right on mobile, bottom-left from sm up -->
@@ -253,7 +275,13 @@
 	bind:volume
 	{muted}
 	{needsGesture}
-	onprimary={() => (needsGesture ? start() : toggleMute())}
+	onprimary={() => {
+		if (needsGesture) start();
+		else {
+			ensureGraph();
+			toggleMute();
+		}
+	}}
 />
 
 <ChatWidget />

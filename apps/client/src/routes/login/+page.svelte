@@ -100,8 +100,9 @@
 				<button
 					type="submit"
 					disabled={busy}
-					class="h-10 w-full rounded-md bg-primary text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+					class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
 				>
+					<Icon icon="lucide:log-in" width={18} />
 					{busy ? 'Connexion…' : 'Entrer en régie'}
 				</button>
 			</form>

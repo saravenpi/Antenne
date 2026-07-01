@@ -28,7 +28,7 @@ export type NowPlaying = {
 	trackId: string;
 	coverUrl?: string;
 	listeners: number;
-	next?: { title: string; artist: string; trackId: string } | null;
+	next?: { title: string; artist: string; trackId: string; coverUrl?: string } | null;
 };
 
 export type Social = { platform: string; url: string };

@@ -212,6 +212,10 @@
 		}
 	}
 
+	// ---- Moderation panel tabs (presentation only) ----
+	type ModTab = 'bans' | 'restrictions' | 'settings';
+	let modTab = $state<ModTab>('bans');
+
 	// ---- Settings panel ----
 	let bannedWordsText = $state('');
 	let slowModeSec = $state(0);
@@ -273,7 +277,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
+<div class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
 	<div class="mb-8">
 		<h1 class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Chat &amp; modération</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
@@ -281,10 +285,12 @@
 		</p>
 	</div>
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-stretch">
+	<div class="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
 		<!-- ================= Live chat ================= -->
-		<div class="flex lg:col-span-3">
-			<Card class="flex h-full w-full flex-col p-0">
+		<div class="lg:col-span-3 lg:sticky lg:top-6">
+			<Card
+				class="flex h-[30rem] w-full flex-col overflow-hidden p-0 sm:h-[34rem] lg:h-[calc(100vh-8rem)] lg:min-h-[32rem]"
+			>
 				<div class="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
 					<div class="flex items-center gap-2">
 						<span
@@ -303,20 +309,24 @@
 
 				{#if wsError}
 					<div
-						class="border-b border-border bg-muted px-5 py-2 text-xs text-muted-foreground"
+						class="flex items-center gap-2 border-b border-border bg-red-500/10 px-5 py-2 text-xs text-red-500"
 						role="alert"
 					>
-						{wsError}
+						<Icon icon="lucide:triangle-alert" width={14} class="shrink-0" />
+						<span class="min-w-0">{wsError}</span>
 					</div>
 				{/if}
 
-				<div bind:this={scroller} class="min-h-[16rem] flex-1 overflow-y-auto px-5 py-4">
+				<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
 					{#if messages.length === 0}
-						<p class="py-12 text-center text-sm text-muted-foreground">Aucun message pour l'instant.</p>
+						<div class="flex h-full flex-col items-center justify-center gap-2 py-12 text-center">
+							<Icon icon="lucide:messages-square" width={28} class="text-muted-foreground/60" />
+							<p class="text-sm text-muted-foreground">Aucun message pour l'instant.</p>
+						</div>
 					{:else}
 						<ul class="space-y-3">
 							{#each messages as msg (msg.id)}
-								<li class="group flex items-start justify-between gap-3">
+								<li class="group flex items-start justify-between gap-3 rounded-[var(--radius)] px-2 py-1.5 transition hover:bg-muted">
 									<div class="min-w-0">
 										<div class="flex flex-wrap items-baseline gap-x-2">
 											<span class="text-sm font-bold text-foreground">{msg.name}</span>
@@ -333,7 +343,7 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											class="h-8 w-8"
+											class="h-8 w-8 text-red-500 hover:bg-red-500/10"
 											onclick={() => deleteMessage(msg.id)}
 											aria-label="Supprimer le message"
 											title="Supprimer"
@@ -387,144 +397,246 @@
 		</div>
 
 		<!-- ================= Moderation column ================= -->
-		<div class="flex flex-col gap-6 lg:col-span-2">
-			<!-- Bans -->
-			<Card>
-				<div class="mb-3 flex items-center gap-2">
-					<Icon icon="lucide:ban" width={18} class="text-foreground" />
-					<h2 class="text-base font-semibold text-foreground">Bannis (IP)</h2>
+		<div class="lg:col-span-2">
+			<Card class="p-0">
+				<!-- Segmented tab control -->
+				<div class="border-b border-border p-2">
+					<div class="grid grid-cols-3 gap-1 rounded-[var(--radius)] bg-muted p-1">
+						<button
+							type="button"
+							onclick={() => (modTab = 'bans')}
+							aria-pressed={modTab === 'bans'}
+							class="inline-flex items-center justify-center gap-1.5 rounded-[calc(var(--radius)-0.25rem)] px-2 py-1.5 text-sm font-medium transition {modTab ===
+							'bans'
+								? 'bg-card text-foreground shadow-sm'
+								: 'text-muted-foreground hover:text-foreground'}"
+						>
+							<Icon icon="lucide:ban" width={15} class="shrink-0" />
+							<span>Bannis</span>
+							{#if bans.length}
+								<span class="rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold tabular-nums">
+									{bans.length}
+								</span>
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={() => (modTab = 'restrictions')}
+							aria-pressed={modTab === 'restrictions'}
+							class="inline-flex items-center justify-center gap-1.5 rounded-[calc(var(--radius)-0.25rem)] px-2 py-1.5 text-sm font-medium transition {modTab ===
+							'restrictions'
+								? 'bg-card text-foreground shadow-sm'
+								: 'text-muted-foreground hover:text-foreground'}"
+						>
+							<Icon icon="lucide:eye-off" width={15} class="shrink-0" />
+							<span>Restreints</span>
+							{#if restrictions.length}
+								<span class="rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold tabular-nums">
+									{restrictions.length}
+								</span>
+							{/if}
+						</button>
+						<button
+							type="button"
+							onclick={() => (modTab = 'settings')}
+							aria-pressed={modTab === 'settings'}
+							class="inline-flex items-center justify-center gap-1.5 rounded-[calc(var(--radius)-0.25rem)] px-2 py-1.5 text-sm font-medium transition {modTab ===
+							'settings'
+								? 'bg-card text-foreground shadow-sm'
+								: 'text-muted-foreground hover:text-foreground'}"
+						>
+							<Icon icon="lucide:settings" width={15} class="shrink-0" />
+							<span>Réglages</span>
+						</button>
+					</div>
 				</div>
 
-				<form class="mb-4 space-y-2" onsubmit={addBan}>
-					<Input bind:value={banIp} placeholder="Adresse IP" aria-label="IP à bannir" />
-					<Input bind:value={banReason} placeholder="Raison (optionnel)" aria-label="Raison du bannissement" />
-					<Button type="submit" size="sm" class="w-full" disabled={banBusy || !banIp.trim()}>
-						Bannir
-					</Button>
-					{#if banError}
-						<p class="text-xs text-red-500">{banError}</p>
+				<div class="p-5">
+					{#if modTab === 'bans'}
+						<!-- ===== Bans ===== -->
+						<div class="mb-1 flex items-center gap-2">
+							<Icon icon="lucide:ban" width={18} class="text-foreground" />
+							<h2 class="text-base font-semibold text-foreground">Bannis (IP)</h2>
+						</div>
+						<p class="mb-4 text-xs text-muted-foreground">
+							Une IP bannie ne peut plus publier dans le chat.
+						</p>
+
+						<form class="mb-5 space-y-2" onsubmit={addBan}>
+							<Input bind:value={banIp} placeholder="Adresse IP" aria-label="IP à bannir" />
+							<Input
+								bind:value={banReason}
+								placeholder="Raison (optionnel)"
+								aria-label="Raison du bannissement"
+							/>
+							<Button type="submit" size="sm" class="w-full" disabled={banBusy || !banIp.trim()}>
+								<Icon icon="lucide:ban" width={15} />
+								Bannir
+							</Button>
+							{#if banError}
+								<p class="flex items-center gap-1.5 text-xs text-red-500">
+									<Icon icon="lucide:triangle-alert" width={13} class="shrink-0" />
+									{banError}
+								</p>
+							{/if}
+						</form>
+
+						{#if bans.length === 0}
+							<div class="flex flex-col items-center gap-2 py-8 text-center">
+								<Icon icon="lucide:shield-check" width={24} class="text-muted-foreground/60" />
+								<p class="text-sm text-muted-foreground">Aucun bannissement.</p>
+							</div>
+						{:else}
+							<ul class="divide-y divide-border">
+								{#each bans as b (b.id)}
+									<li class="flex items-start justify-between gap-2 py-2.5 first:pt-0">
+										<div class="min-w-0">
+											<p class="truncate font-mono text-sm text-foreground">{b.ip}</p>
+											{#if b.reason}
+												<p class="truncate text-xs text-muted-foreground">{b.reason}</p>
+											{/if}
+											<p class="text-[11px] text-muted-foreground">{formatDate(b.createdAt)}</p>
+										</div>
+										<Button variant="outline" size="sm" onclick={() => removeBan(b.id)}>
+											<Icon icon="lucide:rotate-ccw" width={15} />
+											Débannir
+										</Button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					{:else if modTab === 'restrictions'}
+						<!-- ===== Restrictions ===== -->
+						<div class="mb-1 flex items-center gap-2">
+							<Icon icon="lucide:eye-off" width={18} class="text-foreground" />
+							<h2 class="text-base font-semibold text-foreground">Restreints (shadow-ban)</h2>
+						</div>
+						<p class="mb-4 text-xs text-muted-foreground">
+							Un utilisateur restreint voit ses messages, mais personne d'autre ne les voit.
+						</p>
+
+						<form class="mb-5 space-y-2" onsubmit={addRestriction}>
+							<Input bind:value={restrictIp} placeholder="Adresse IP" aria-label="IP à restreindre" />
+							<Input
+								bind:value={restrictReason}
+								placeholder="Raison (optionnel)"
+								aria-label="Raison de la restriction"
+							/>
+							<Button
+								type="submit"
+								size="sm"
+								class="w-full"
+								disabled={restrictBusy || !restrictIp.trim()}
+							>
+								<Icon icon="lucide:eye-off" width={15} />
+								Restreindre
+							</Button>
+							{#if restrictError}
+								<p class="flex items-center gap-1.5 text-xs text-red-500">
+									<Icon icon="lucide:triangle-alert" width={13} class="shrink-0" />
+									{restrictError}
+								</p>
+							{/if}
+						</form>
+
+						{#if restrictions.length === 0}
+							<div class="flex flex-col items-center gap-2 py-8 text-center">
+								<Icon icon="lucide:eye" width={24} class="text-muted-foreground/60" />
+								<p class="text-sm text-muted-foreground">Aucune restriction.</p>
+							</div>
+						{:else}
+							<ul class="divide-y divide-border">
+								{#each restrictions as r (r.id)}
+									<li class="flex items-start justify-between gap-2 py-2.5 first:pt-0">
+										<div class="min-w-0">
+											<p class="truncate font-mono text-sm text-foreground">{r.ip}</p>
+											{#if r.reason}
+												<p class="truncate text-xs text-muted-foreground">{r.reason}</p>
+											{/if}
+											<p class="text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</p>
+										</div>
+										<Button variant="outline" size="sm" onclick={() => removeRestriction(r.id)}>
+											<Icon icon="lucide:eye" width={15} />
+											Lever
+										</Button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					{:else}
+						<!-- ===== Settings ===== -->
+						<div class="mb-1 flex items-center gap-2">
+							<Icon icon="lucide:settings" width={18} class="text-foreground" />
+							<h2 class="text-base font-semibold text-foreground">Réglages du chat</h2>
+						</div>
+						<p class="mb-4 text-xs text-muted-foreground">
+							Filtrez les messages et espacez les envois pour garder un chat sain.
+						</p>
+
+						<form class="space-y-5" onsubmit={saveSettings}>
+							<div>
+								<label
+									for="banned-words"
+									class="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground"
+								>
+									<Icon icon="lucide:message-square-off" width={15} class="text-muted-foreground" />
+									Mots interdits
+								</label>
+								<textarea
+									id="banned-words"
+									bind:value={bannedWordsText}
+									rows="6"
+									placeholder="Un mot interdit par ligne"
+									class="w-full rounded-[var(--radius)] border border-border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-[var(--color-foreground)]/20"
+								></textarea>
+								<p class="mt-1.5 text-xs text-muted-foreground">
+									Un mot par ligne. Liste vide par défaut = aucun filtrage.
+								</p>
+							</div>
+
+							<div>
+								<label
+									for="slow-mode"
+									class="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground"
+								>
+									<Icon icon="lucide:timer" width={15} class="text-muted-foreground" />
+									Mode lent (secondes)
+								</label>
+								<Input
+									id="slow-mode"
+									type="number"
+									min="0"
+									value={String(slowModeSec)}
+									oninput={(e) =>
+										(slowModeSec = Number((e.currentTarget as HTMLInputElement).value) || 0)}
+									placeholder="0"
+									aria-label="Délai minimum entre messages"
+								/>
+								<p class="mt-1.5 text-xs text-muted-foreground">Délai minimum entre deux messages.</p>
+							</div>
+
+							<div class="flex flex-wrap items-center gap-3">
+								<Button type="submit" disabled={settingsBusy}>
+									<Icon icon="lucide:save" width={16} />
+									Enregistrer
+								</Button>
+								{#if settingsSaved}
+									<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+										<Icon icon="lucide:circle-check" width={16} />
+										Enregistré
+									</span>
+								{/if}
+								{#if settingsError}
+									<span class="inline-flex items-center gap-1.5 text-sm text-red-500">
+										<Icon icon="lucide:triangle-alert" width={14} class="shrink-0" />
+										{settingsError}
+									</span>
+								{/if}
+							</div>
+						</form>
 					{/if}
-				</form>
-
-				{#if bans.length === 0}
-					<p class="text-sm text-muted-foreground">Aucun bannissement.</p>
-				{:else}
-					<ul class="space-y-2">
-						{#each bans as b (b.id)}
-							<li class="flex items-start justify-between gap-2 border-t border-border pt-2">
-								<div class="min-w-0">
-									<p class="truncate font-mono text-sm text-foreground">{b.ip}</p>
-									{#if b.reason}
-										<p class="truncate text-xs text-muted-foreground">{b.reason}</p>
-									{/if}
-									<p class="text-[11px] text-muted-foreground">{formatDate(b.createdAt)}</p>
-								</div>
-								<Button variant="outline" size="sm" onclick={() => removeBan(b.id)}>Débannir</Button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</Card>
-
-			<!-- Restrictions -->
-			<Card>
-				<div class="mb-1 flex items-center gap-2">
-					<Icon icon="lucide:eye-off" width={18} class="text-foreground" />
-					<h2 class="text-base font-semibold text-foreground">Restreints (shadow-ban)</h2>
 				</div>
-				<p class="mb-3 text-xs text-muted-foreground">
-					Un utilisateur restreint voit ses messages, mais personne d'autre ne les voit.
-				</p>
-
-				<form class="mb-4 space-y-2" onsubmit={addRestriction}>
-					<Input bind:value={restrictIp} placeholder="Adresse IP" aria-label="IP à restreindre" />
-					<Input
-						bind:value={restrictReason}
-						placeholder="Raison (optionnel)"
-						aria-label="Raison de la restriction"
-					/>
-					<Button type="submit" size="sm" class="w-full" disabled={restrictBusy || !restrictIp.trim()}>
-						Restreindre
-					</Button>
-					{#if restrictError}
-						<p class="text-xs text-red-500">{restrictError}</p>
-					{/if}
-				</form>
-
-				{#if restrictions.length === 0}
-					<p class="text-sm text-muted-foreground">Aucune restriction.</p>
-				{:else}
-					<ul class="space-y-2">
-						{#each restrictions as r (r.id)}
-							<li class="flex items-start justify-between gap-2 border-t border-border pt-2">
-								<div class="min-w-0">
-									<p class="truncate font-mono text-sm text-foreground">{r.ip}</p>
-									{#if r.reason}
-										<p class="truncate text-xs text-muted-foreground">{r.reason}</p>
-									{/if}
-									<p class="text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</p>
-								</div>
-								<Button variant="outline" size="sm" onclick={() => removeRestriction(r.id)}>Lever</Button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
 			</Card>
 		</div>
 	</div>
-
-	<!-- ================= Settings ================= -->
-	<Card class="mt-6">
-		<div class="mb-3 flex items-center gap-2">
-			<Icon icon="lucide:settings" width={18} class="text-foreground" />
-			<h2 class="text-base font-semibold text-foreground">Réglages du chat</h2>
-		</div>
-
-		<form class="grid grid-cols-1 gap-4 md:grid-cols-2" onsubmit={saveSettings}>
-			<div>
-				<label for="banned-words" class="mb-1.5 block text-sm font-medium text-foreground">
-					Mots interdits
-				</label>
-				<textarea
-					id="banned-words"
-					bind:value={bannedWordsText}
-					rows="6"
-					placeholder="Un mot interdit par ligne"
-					class="w-full rounded-[var(--radius)] border border-border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-[var(--color-foreground)]/20"
-				></textarea>
-				<p class="mt-1.5 text-xs text-muted-foreground">
-					Un mot par ligne. Liste vide par défaut = aucun filtrage.
-				</p>
-			</div>
-
-			<div>
-				<label for="slow-mode" class="mb-1.5 block text-sm font-medium text-foreground">
-					Mode lent (secondes)
-				</label>
-				<Input
-					id="slow-mode"
-					type="number"
-					min="0"
-					value={String(slowModeSec)}
-					oninput={(e) => (slowModeSec = Number((e.currentTarget as HTMLInputElement).value) || 0)}
-					placeholder="0"
-					aria-label="Délai minimum entre messages"
-				/>
-				<p class="mt-1.5 text-xs text-muted-foreground">Délai minimum entre deux messages.</p>
-			</div>
-
-			<div class="flex items-center gap-3 md:col-span-2">
-				<Button type="submit" disabled={settingsBusy}>Enregistrer</Button>
-				{#if settingsSaved}
-					<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-						<Icon icon="lucide:circle-check" width={16} />
-						Enregistré
-					</span>
-				{/if}
-				{#if settingsError}
-					<span class="text-sm text-red-500">{settingsError}</span>
-				{/if}
-			</div>
-		</form>
-	</Card>
 </div>

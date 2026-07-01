@@ -6,6 +6,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import AudioVisualizer from '$lib/components/AudioVisualizer.svelte';
+	import TrackCard from '$lib/components/player/TrackCard.svelte';
 	import {
 		api,
 		getToken,
@@ -119,9 +120,16 @@
 					audioBitsPerSecond: 128000
 				});
 				recorder.ondataavailable = (ev) => {
-					if (ev.data.size > 0 && ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
+					if (ev.data.size === 0 || ws?.readyState !== WebSocket.OPEN) return;
+					// Guard against an uplink that can't keep up: if the socket is badly
+					// backed up, skip this chunk rather than letting latency (and memory)
+					// grow without bound. The server's jitter buffer rides out the gap.
+					if (ws.bufferedAmount > 1_000_000) return;
+					ws.send(ev.data);
 				};
-				recorder.start(250);
+				// Smaller timeslices deliver audio to the server more evenly, so its
+				// jitter buffer needs less depth and end-to-end latency stays low.
+				recorder.start(100);
 				live = true;
 				starting = false;
 			};
@@ -443,10 +451,22 @@
 
 	<!-- Now playing readout -->
 	{#if now}
-		<div class="mt-6 space-y-1 text-sm text-muted-foreground">
-			<p>En ce moment : <span class="text-foreground">{now.title}</span></p>
+		<div class="mt-6 flex flex-col gap-3 sm:flex-row">
+			<TrackCard
+				label="En ce moment"
+				title={now.title}
+				artist={now.artist}
+				coverUrl={now.coverUrl}
+				accent
+			/>
 			{#if now.next}
-				<p>À suivre : <span class="text-foreground">{now.next.title}</span></p>
+				<TrackCard
+					label="À suivre"
+					title={now.next.title}
+					artist={now.next.artist}
+					coverUrl={now.next.coverUrl}
+					icon="lucide:skip-forward"
+				/>
 			{/if}
 		</div>
 	{/if}

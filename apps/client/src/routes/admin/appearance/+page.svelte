@@ -94,10 +94,13 @@
 		});
 	}
 
-	async function onBgFile(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
+	let bgDragOver = $state(false);
+
+	async function handleBgFile(file: File) {
+		if (!file.type.startsWith('image/')) {
+			apprError = 'Fichier image attendu';
+			return;
+		}
 		apprError = null;
 		try {
 			const data = await downscale(file, 1600, 'image/jpeg', 0.82);
@@ -105,7 +108,20 @@
 		} catch (err) {
 			apprError = err instanceof Error ? err.message : 'Image illisible';
 		}
+	}
+
+	async function onBgFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) await handleBgFile(file);
 		input.value = '';
+	}
+
+	async function onBgDrop(e: DragEvent) {
+		e.preventDefault();
+		bgDragOver = false;
+		const file = e.dataTransfer?.files?.[0];
+		if (file) await handleBgFile(file);
 	}
 
 	async function saveAppearance() {
@@ -131,17 +147,33 @@
 	let logoError = $state<string | null>(null);
 	let logoTimer: ReturnType<typeof setTimeout> | null = null;
 
-	async function onLogoFile(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
+	let logoDragOver = $state(false);
+
+	async function handleLogoFile(file: File) {
+		if (!file.type.startsWith('image/')) {
+			logoError = 'Fichier image attendu';
+			return;
+		}
 		logoError = null;
 		try {
 			logo = await downscale(file, 256, 'image/png');
 		} catch (err) {
 			logoError = err instanceof Error ? err.message : 'Image illisible';
 		}
+	}
+
+	async function onLogoFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) await handleLogoFile(file);
 		input.value = '';
+	}
+
+	async function onLogoDrop(e: DragEvent) {
+		e.preventDefault();
+		logoDragOver = false;
+		const file = e.dataTransfer?.files?.[0];
+		if (file) await handleLogoFile(file);
 	}
 
 	async function saveLogo(value: string) {
@@ -241,7 +273,10 @@
 				class="sm:max-w-sm"
 			/>
 			<div class="flex items-center gap-3">
-				<Button type="submit" disabled={nameBusy || !stationName.trim()}>Enregistrer</Button>
+				<Button type="submit" disabled={nameBusy || !stationName.trim()}>
+					<Icon icon="lucide:save" width={16} />
+					Enregistrer
+				</Button>
 				{#if nameSaved}
 					<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
 						<Icon icon="lucide:circle-check" width={16} /> Enregistré
@@ -296,31 +331,42 @@
 							class="h-10 w-14 cursor-pointer rounded-[var(--radius)] border border-border bg-transparent"
 						/>
 						<Button type="button" variant="outline" size="sm" onclick={applyColor}>
+							<Icon icon="lucide:check" width={16} />
 							Utiliser cette couleur
 						</Button>
 					</div>
 				</div>
 
-				<!-- Image upload -->
+				<!-- Image upload (dropzone) -->
 				<div>
-					<label for="bg-image" class="mb-1.5 block text-sm font-medium text-foreground">
-						Image de fond
+					<span class="mb-1.5 block text-sm font-medium text-foreground">Image de fond</span>
+					<label
+						ondragover={(e) => {
+							e.preventDefault();
+							bgDragOver = true;
+						}}
+						ondragleave={() => (bgDragOver = false)}
+						ondrop={onBgDrop}
+						class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed px-4 py-7 text-center transition {bgDragOver
+							? 'border-foreground/40 bg-muted'
+							: 'border-border hover:bg-muted/50'}"
+					>
+						<Icon icon="lucide:image-plus" width={24} class="text-muted-foreground" />
+						<span class="text-sm text-foreground">Glisse une image ici ou clique pour parcourir</span>
+						<span class="text-xs text-muted-foreground">
+							Redimensionnée automatiquement (max 1600 px), puis « Enregistrer le fond ».
+						</span>
+						<input type="file" accept="image/*" onchange={onBgFile} class="sr-only" />
 					</label>
-					<input
-						id="bg-image"
-						type="file"
-						accept="image/*"
-						onchange={onBgFile}
-						class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-[var(--radius)] file:border file:border-border file:bg-transparent file:px-3 file:py-2 file:text-sm file:text-foreground hover:file:bg-muted"
-					/>
-					<p class="mt-1 text-xs text-muted-foreground">
-						Redimensionnée automatiquement (max 1600 px), puis « Enregistrer le fond ».
-					</p>
 				</div>
 
 				<div class="flex items-center gap-3">
-					<Button type="button" onclick={saveAppearance} disabled={apprBusy}>Enregistrer le fond</Button>
+					<Button type="button" onclick={saveAppearance} disabled={apprBusy}>
+						<Icon icon="lucide:save" width={16} />
+						Enregistrer le fond
+					</Button>
 					<Button type="button" variant="ghost" size="sm" onclick={() => (background = '')}>
+						<Icon icon="lucide:rotate-ccw" width={16} />
 						Réinitialiser
 					</Button>
 					{#if apprSaved}
@@ -362,28 +408,34 @@
 
 		<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
 			<div class="space-y-4">
-				<!-- Upload -->
+				<!-- Upload (dropzone) -->
 				<div>
-					<label for="logo-file" class="mb-1.5 block text-sm font-medium text-foreground">
-						Importer une image
+					<span class="mb-1.5 block text-sm font-medium text-foreground">Importer une image</span>
+					<label
+						ondragover={(e) => {
+							e.preventDefault();
+							logoDragOver = true;
+						}}
+						ondragleave={() => (logoDragOver = false)}
+						ondrop={onLogoDrop}
+						class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed px-4 py-7 text-center transition {logoDragOver
+							? 'border-foreground/40 bg-muted'
+							: 'border-border hover:bg-muted/50'}"
+					>
+						<Icon icon="lucide:image-plus" width={24} class="text-muted-foreground" />
+						<span class="text-sm text-foreground">Glisse un logo ici ou clique pour parcourir</span>
+						<span class="text-xs text-muted-foreground">Redimensionné automatiquement (max 256×256).</span>
+						<input type="file" accept="image/*" onchange={onLogoFile} class="sr-only" />
 					</label>
-					<input
-						id="logo-file"
-						type="file"
-						accept="image/*"
-						onchange={onLogoFile}
-						class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-[var(--radius)] file:border file:border-border file:bg-transparent file:px-3 file:py-2 file:text-sm file:text-foreground hover:file:bg-muted"
-					/>
-					<p class="mt-1 text-xs text-muted-foreground">
-						Redimensionnée automatiquement (max 256×256).
-					</p>
 				</div>
 
 				<div class="flex flex-wrap items-center gap-3">
 					<Button type="button" onclick={() => saveLogo(logo)} disabled={logoBusy}>
+						<Icon icon="lucide:save" width={16} />
 						Enregistrer le logo
 					</Button>
 					<Button type="button" variant="outline" size="sm" onclick={resetLogo} disabled={logoBusy}>
+						<Icon icon="lucide:rotate-ccw" width={16} />
 						Réinitialiser le logo par défaut
 					</Button>
 					{#if logoSaved}
@@ -458,6 +510,7 @@
 				<Icon icon="lucide:plus" width={16} class="mr-1.5" /> Ajouter un réseau
 			</Button>
 			<Button type="button" onclick={saveSocials} disabled={socialsBusy}>
+				<Icon icon="lucide:save" width={16} />
 				Enregistrer les réseaux
 			</Button>
 			{#if socialsSaved}

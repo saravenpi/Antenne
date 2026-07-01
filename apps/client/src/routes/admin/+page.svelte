@@ -17,6 +17,8 @@
 	let title = $state('');
 	let artist = $state('');
 	let uploading = $state(false);
+	let dragOver = $state(false);
+	let fileInput: HTMLInputElement;
 
 	// Live broadcast
 	let live = $state(false);
@@ -51,6 +53,24 @@
 		} catch {
 			logout();
 		}
+	}
+
+	function pickFiles(files: FileList | null) {
+		if (files && files.length) {
+			file = files;
+			if (!title) title = files[0].name.replace(/\.[^./\\]+$/, '');
+		}
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dragOver = false;
+		pickFiles(e.dataTransfer?.files ?? null);
+	}
+
+	function clearFile() {
+		file = null;
+		fileInput.value = '';
 	}
 
 	async function doUpload(e: SubmitEvent) {
@@ -244,15 +264,57 @@
 		<Card class="mb-8">
 			<h2 class="mb-4 text-lg font-semibold">Ajouter un son</h2>
 			<form class="flex flex-col gap-3" onsubmit={doUpload}>
-				<Input placeholder="Titre" bind:value={title} />
-				<Input placeholder="Artiste" bind:value={artist} />
+				<button
+					type="button"
+					onclick={() => fileInput.click()}
+					ondragover={(e) => {
+						e.preventDefault();
+						dragOver = true;
+					}}
+					ondragleave={() => (dragOver = false)}
+					ondrop={onDrop}
+					class="flex flex-col items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed px-6 py-10 text-center transition-colors {dragOver
+						? 'border-[var(--color-foreground)] bg-[var(--color-muted)]'
+						: 'border-[var(--color-border)] hover:bg-[var(--color-muted)]'}"
+				>
+					{#if file?.[0]}
+						<Icon icon="solar:file-check-bold-duotone" width={34} />
+						<p class="text-sm font-medium">{file[0].name}</p>
+						<p class="text-xs text-[var(--color-muted-foreground)]">
+							{(file[0].size / 1024 / 1024).toFixed(1)} Mo · clique pour changer
+						</p>
+					{:else}
+						<Icon
+							icon="solar:cloud-upload-bold-duotone"
+							width={38}
+							class="text-[var(--color-muted-foreground)]"
+						/>
+						<p class="text-sm font-medium">Glisse un fichier audio ici</p>
+						<p class="text-xs text-[var(--color-muted-foreground)]">
+							ou clique pour parcourir · MP3, WAV, FLAC…
+						</p>
+					{/if}
+				</button>
 				<input
+					bind:this={fileInput}
 					type="file"
 					accept="audio/*"
-					onchange={(e) => (file = (e.target as HTMLInputElement).files)}
-					class="text-sm file:mr-3 file:rounded-[var(--radius)] file:border file:border-[var(--color-border)] file:bg-transparent file:px-3 file:py-1.5 file:text-[var(--color-foreground)]"
+					class="hidden"
+					onchange={(e) => pickFiles((e.target as HTMLInputElement).files)}
 				/>
-				<Button type="submit" disabled={uploading}>
+				{#if file?.[0]}
+					<button
+						type="button"
+						onclick={clearFile}
+						class="self-start text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] hover:underline"
+					>
+						Retirer le fichier
+					</button>
+				{/if}
+
+				<Input placeholder="Titre" bind:value={title} />
+				<Input placeholder="Artiste" bind:value={artist} />
+				<Button type="submit" disabled={uploading || !file?.[0]}>
 					<Icon icon="solar:upload-bold-duotone" width={20} />
 					{uploading ? 'Envoi…' : 'Uploader'}
 				</Button>

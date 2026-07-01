@@ -277,19 +277,21 @@
 	});
 </script>
 
-<div class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 md:px-10">
-	<div class="mb-8">
+<div
+	class="mx-auto flex max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10 md:px-10 lg:h-full lg:overflow-hidden"
+>
+	<div class="mb-8 lg:shrink-0">
 		<h1 class="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Chat &amp; modération</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
 			Le direct de la régie : suivez les messages, répondez, et modérez les auditeurs.
 		</p>
 	</div>
 
-	<div class="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
+	<div class="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-5">
 		<!-- ================= Live chat ================= -->
-		<div class="lg:col-span-3 lg:sticky lg:top-6">
+		<div class="lg:col-span-3 lg:min-h-0">
 			<Card
-				class="flex h-[30rem] w-full flex-col overflow-hidden p-0 sm:h-[34rem] lg:h-[calc(100vh-8rem)] lg:min-h-[32rem]"
+				class="flex h-[30rem] w-full flex-col overflow-hidden p-0 sm:h-[34rem] lg:h-full lg:min-h-0"
 			>
 				<div class="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
 					<div class="flex items-center gap-2">
@@ -397,7 +399,7 @@
 		</div>
 
 		<!-- ================= Moderation column ================= -->
-		<div class="lg:col-span-2">
+		<div class="lg:col-span-2 lg:min-h-0 lg:overflow-y-auto">
 			<Card class="p-0">
 				<!-- Segmented tab control -->
 				<div class="border-b border-border p-2">

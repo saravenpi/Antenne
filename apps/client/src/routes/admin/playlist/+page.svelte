@@ -655,9 +655,11 @@
 							</div>
 						{/if}
 					</div>
-					<div class="flex shrink-0 items-center gap-1">
+					<div
+						class="flex shrink-0 basis-full items-center justify-end gap-1 sm:basis-auto"
+					>
 						<select
-							class="h-8 max-w-[8rem] rounded-[var(--radius)] border border-[var(--color-border)] bg-transparent px-1.5 text-xs text-[var(--color-foreground)] outline-none focus:ring-2 focus:ring-[var(--color-foreground)]/20"
+							class="h-8 min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-transparent px-1.5 text-xs text-[var(--color-foreground)] outline-none focus:ring-2 focus:ring-[var(--color-foreground)]/20 sm:max-w-[8rem] sm:flex-none"
 							title="Déplacer vers une playlist"
 							aria-label="Déplacer {track.title} vers une playlist"
 							value={track.collectionId ?? ''}

@@ -40,6 +40,12 @@
 	let apprError = $state<string | null>(null);
 	let apprTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// The stored background uses `fixed` attachment for a parallax feel on the
+	// full listener page, but `fixed` is sized against the viewport — inside the
+	// small preview box it wouldn't cover the box. Drop it so the preview shows a
+	// faithful, ratio-preserving `cover` crop.
+	let previewBg = $derived(background.replace(/\s*fixed/g, ''));
+
 	const bgPresets: { label: string; value: string }[] = [
 		{ label: 'Défaut', value: '' },
 		{ label: 'Nuit', value: 'radial-gradient(circle at 50% 0%, #1b1b1b, #0a0a0a)' },
@@ -384,8 +390,8 @@
 			<div>
 				<span class="mb-1.5 block text-sm font-medium text-foreground">Aperçu</span>
 				<div
-					class="flex h-56 items-center justify-center rounded-[var(--radius)] border border-border"
-					style={background ? `background: ${background};` : 'background: var(--color-background);'}
+					class="flex h-56 items-center justify-center overflow-hidden rounded-[var(--radius)] border border-border bg-cover bg-center bg-no-repeat"
+					style={previewBg ? `background: ${previewBg};` : 'background: var(--color-background);'}
 				>
 					<div class="flex flex-col items-center gap-2 text-foreground">
 						<Icon icon="solar:podcast-bold-duotone" width={40} />
@@ -506,8 +512,9 @@
 		</div>
 
 		<div class="mt-4 flex flex-wrap items-center gap-3">
-			<Button type="button" variant="outline" size="sm" onclick={addSocial}>
-				<Icon icon="lucide:plus" width={16} class="mr-1.5" /> Ajouter un réseau
+			<Button type="button" variant="outline" onclick={addSocial}>
+				<Icon icon="lucide:plus" width={16} />
+				Ajouter un réseau
 			</Button>
 			<Button type="button" onclick={saveSocials} disabled={socialsBusy}>
 				<Icon icon="lucide:save" width={16} />

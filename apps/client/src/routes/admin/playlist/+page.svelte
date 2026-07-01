@@ -49,6 +49,7 @@
 	let editing = $state<Track | null>(null);
 	let editTitle = $state('');
 	let editArtist = $state('');
+	let editCollectionId = $state('');
 	let editCoverFile = $state<File | null>(null);
 	let editCoverPreview = $state('');
 	let editBusy = $state(false);
@@ -59,6 +60,7 @@
 		editing = track;
 		editTitle = track.title;
 		editArtist = track.artist ?? '';
+		editCollectionId = track.collectionId ?? '';
 		editCoverFile = null;
 		editError = '';
 		if (editCoverPreview) URL.revokeObjectURL(editCoverPreview);
@@ -131,9 +133,13 @@
 		editBusy = true;
 		editError = '';
 		try {
-			let updated = await api.updateTrack(editing.id, { title, artist: editArtist.trim() });
-			if (editCoverFile) updated = await api.uploadCover(editing.id, editCoverFile);
-			tracks = tracks.map((t) => (t.id === updated.id ? updated : t));
+			await api.updateTrack(editing.id, { title, artist: editArtist.trim() });
+			if (editCoverFile) await api.uploadCover(editing.id, editCoverFile);
+			const newCol = editCollectionId || null;
+			if ((editing.collectionId ?? null) !== newCol) {
+				await api.moveTrack(editing.id, newCol);
+			}
+			await loadTracks();
 			await loadNowPlaying();
 			closeEdit();
 		} catch (e) {
@@ -237,15 +243,6 @@
 		confirmingDelete = false;
 	}
 
-	async function moveTrackTo(id: string, value: string) {
-		try {
-			await api.moveTrack(id, value || null);
-			await loadTracks();
-		} catch (e) {
-			console.error(e);
-		}
-	}
-
 	function isAudio(file: File): boolean {
 		return file.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(file.name);
 	}
@@ -341,12 +338,21 @@
 		}
 	}
 
-	async function remove(id: string) {
+	// ---- Delete a track (with confirmation) ----
+	let deleteTarget = $state<Track | null>(null);
+	let deleteBusy = $state(false);
+
+	async function confirmDelete() {
+		if (!deleteTarget) return;
+		deleteBusy = true;
 		try {
-			await api.deleteTrack(id);
+			await api.deleteTrack(deleteTarget.id);
 			await loadTracks();
+			deleteTarget = null;
 		} catch (e) {
 			console.error(e);
+		} finally {
+			deleteBusy = false;
 		}
 	}
 
@@ -679,49 +685,56 @@
 						? 'border-green-500/60 bg-[var(--color-muted)]'
 						: ''}"
 				>
-					{#if track.coverUrl}
-						<img
-							src={track.coverUrl}
-							alt=""
-							class="h-10 w-10 shrink-0 rounded-md object-cover"
-							loading="lazy"
-						/>
-					{:else}
-						<span
-							class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--color-muted)] text-[var(--color-muted-foreground)]"
-							aria-hidden="true"
-						>
-							<Icon icon="lucide:music" width={18} />
-						</span>
-					{/if}
-					<Button
-						variant="ghost"
-						size="icon"
-						class="h-9 w-9 shrink-0"
+					<!-- Cover doubles as the play control: play icon on hover, live
+					     equalizer overlay when the track is on air. -->
+					<button
+						type="button"
+						onclick={() => playNow(track.id)}
+						disabled={controlBusy}
 						aria-label="Lire {track.title}"
 						title="Lire maintenant"
-						disabled={controlBusy}
-						onclick={() => playNow(track.id)}
+						class="group relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-[var(--color-muted)]"
 					>
-						<Icon
-							icon="lucide:play"
-							width={18}
-							class={isNow ? 'text-green-500' : ''}
-						/>
-					</Button>
-					{#if isNow}
-						<span
-							class="eq flex h-4 w-6 shrink-0 items-end justify-center gap-0.5 {nowPlaying?.paused
-								? 'eq-paused'
-								: ''}"
-							aria-hidden="true"
-						>
-							<span class="eq-bar"></span>
-							<span class="eq-bar"></span>
-							<span class="eq-bar"></span>
-							<span class="eq-bar"></span>
-						</span>
-					{/if}
+						{#if track.coverUrl}
+							<img
+								src={track.coverUrl}
+								alt=""
+								class="h-full w-full object-cover"
+								loading="lazy"
+							/>
+						{:else}
+							<span
+								class="flex h-full w-full items-center justify-center text-[var(--color-muted-foreground)]"
+								aria-hidden="true"
+							>
+								<Icon icon="lucide:music" width={18} />
+							</span>
+						{/if}
+						{#if isNow}
+							<span
+								class="absolute inset-0 flex items-center justify-center bg-black/50"
+								aria-hidden="true"
+							>
+								<span
+									class="eq flex h-4 items-end justify-center gap-0.5 {nowPlaying?.paused
+										? 'eq-paused'
+										: ''}"
+								>
+									<span class="eq-bar"></span>
+									<span class="eq-bar"></span>
+									<span class="eq-bar"></span>
+									<span class="eq-bar"></span>
+								</span>
+							</span>
+						{:else}
+							<span
+								class="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition group-hover:opacity-100"
+								aria-hidden="true"
+							>
+								<Icon icon="lucide:play" width={18} />
+							</span>
+						{/if}
+					</button>
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
 							<span class="truncate font-medium text-[var(--color-foreground)]">
@@ -747,27 +760,13 @@
 							</div>
 						{/if}
 					</div>
-					<div
-						class="flex shrink-0 basis-full items-center justify-end gap-1 sm:basis-auto"
-					>
-						<select
-							class="h-8 min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-transparent px-1.5 text-xs text-[var(--color-foreground)] outline-none focus:ring-2 focus:ring-[var(--color-foreground)]/20 sm:max-w-[8rem] sm:flex-none"
-							title="Déplacer vers une playlist"
-							aria-label="Déplacer {track.title} vers une playlist"
-							value={track.collectionId ?? ''}
-							onchange={(e) => moveTrackTo(track.id, (e.currentTarget as HTMLSelectElement).value)}
-						>
-							<option value="">Sans playlist</option>
-							{#each collections as c (c.id)}
-								<option value={c.id}>{c.name}</option>
-							{/each}
-						</select>
+					<div class="flex shrink-0 items-center gap-1">
 						<Button
 							variant="ghost"
 							size="icon"
 							class="h-8 w-8"
 							aria-label="Modifier {track.title}"
-							title="Modifier le titre, l'artiste, la cover"
+							title="Modifier le titre, l'artiste, la cover, la playlist"
 							onclick={() => openEdit(track)}
 						>
 							<Icon icon="lucide:pencil" width={16} />
@@ -794,7 +793,9 @@
 							variant="ghost"
 							size="icon"
 							class="h-8 w-8 text-red-500 hover:bg-red-500/10"
-							onclick={() => remove(track.id)}
+							aria-label="Supprimer {track.title}"
+							title="Supprimer"
+							onclick={() => (deleteTarget = track)}
 						>
 							<Icon icon="lucide:trash-2" width={18} />
 						</Button>
@@ -807,7 +808,9 @@
 
 <svelte:window
 	onkeydown={(e) => {
-		if (e.key === 'Escape' && editing) closeEdit();
+		if (e.key !== 'Escape') return;
+		if (editing) closeEdit();
+		else if (deleteTarget) deleteTarget = null;
 	}}
 />
 
@@ -889,6 +892,22 @@
 					</div>
 				</div>
 
+				<div>
+					<label for="edit-collection" class="mb-1 block text-xs font-medium text-[var(--color-muted-foreground)]">
+						Playlist
+					</label>
+					<select
+						id="edit-collection"
+						bind:value={editCollectionId}
+						class="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-transparent px-2 text-sm text-[var(--color-foreground)] outline-none focus:ring-2 focus:ring-[var(--color-foreground)]/20"
+					>
+						<option value="">Sans playlist</option>
+						{#each collections as c (c.id)}
+							<option value={c.id}>{c.name}</option>
+						{/each}
+					</select>
+				</div>
+
 				<p class="text-xs text-[var(--color-muted-foreground)]">
 					Glisse une image sur la cover ou clique dessus pour la remplacer.
 				</p>
@@ -904,6 +923,46 @@
 					<Button onclick={saveEdit} disabled={editBusy || !editTitle.trim()}>
 						<Icon icon="lucide:save" width={16} />
 						{editBusy ? 'Enregistrement…' : 'Enregistrer'}
+					</Button>
+				</div>
+			</Card>
+		</div>
+	</div>
+{/if}
+
+{#if deleteTarget}
+	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+		<button
+			type="button"
+			class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+			aria-label="Annuler"
+			onclick={() => (deleteTarget = null)}
+		></button>
+		<div class="relative z-10 w-full max-w-sm">
+			<Card class="flex flex-col gap-4">
+				<div class="flex items-start gap-3">
+					<span
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-500"
+						aria-hidden="true"
+					>
+						<Icon icon="lucide:trash-2" width={20} />
+					</span>
+					<div class="min-w-0">
+						<h2 class="text-base font-semibold text-[var(--color-foreground)]">Supprimer ce son ?</h2>
+						<p class="mt-1 text-sm text-[var(--color-muted-foreground)]">
+							<span class="font-medium text-[var(--color-foreground)]">{deleteTarget.title}</span>
+							sera retiré de la playlist définitivement. Cette action est irréversible.
+						</p>
+					</div>
+				</div>
+
+				<div class="flex justify-end gap-2">
+					<Button variant="outline" onclick={() => (deleteTarget = null)} disabled={deleteBusy}>
+						<Icon icon="lucide:x" width={16} /> Annuler
+					</Button>
+					<Button variant="destructive" onclick={confirmDelete} disabled={deleteBusy}>
+						<Icon icon="lucide:trash-2" width={16} />
+						{deleteBusy ? 'Suppression…' : 'Supprimer'}
 					</Button>
 				</div>
 			</Card>

@@ -69,12 +69,26 @@
 		}
 	}
 
+	// Broadcast-quality capture: disable the browser's voice-processing (echo
+	// cancellation / noise suppression / auto gain). It mangles music, and on
+	// macOS it forces the audio hardware into "communication" mode — which is what
+	// briefly glitches the machine's other audio when the mic opens.
+	function micConstraints(deviceId?: string): MediaStreamConstraints {
+		const audio: MediaTrackConstraints = {
+			echoCancellation: false,
+			noiseSuppression: false,
+			autoGainControl: false
+		};
+		if (deviceId) audio.deviceId = { exact: deviceId };
+		return { audio };
+	}
+
 	// Browsers hide device labels/ids until mic access is granted at least once.
 	// Probe for permission, then re-enumerate so the real input names show up.
 	async function requestMicAccess() {
 		error = '';
 		try {
-			const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const probe = await navigator.mediaDevices.getUserMedia(micConstraints());
 			probe.getTracks().forEach((t) => t.stop());
 		} catch (e) {
 			error = (e as Error).message;
@@ -87,9 +101,7 @@
 		starting = true;
 		error = '';
 		try {
-			micStream = await navigator.mediaDevices.getUserMedia({
-				audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
-			});
+			micStream = await navigator.mediaDevices.getUserMedia(micConstraints(selectedDeviceId || undefined));
 			refreshDevices();
 			audioCtx = newAudioContext();
 			const src = audioCtx.createMediaStreamSource(micStream);
@@ -102,7 +114,10 @@
 			ws.binaryType = 'arraybuffer';
 			ws.onopen = () => {
 				const mime = pickRecorderMime();
-				recorder = new MediaRecorder(micStream!, mime ? { mimeType: mime } : undefined);
+				recorder = new MediaRecorder(micStream!, {
+					...(mime ? { mimeType: mime } : {}),
+					audioBitsPerSecond: 128000
+				});
 				recorder.ondataavailable = (ev) => {
 					if (ev.data.size > 0 && ws?.readyState === WebSocket.OPEN) ws.send(ev.data);
 				};
@@ -391,6 +406,14 @@
 
 		{#if error}
 			<p class="text-sm text-red-500">{error}</p>
+		{/if}
+
+		{#if live}
+			<p class="flex items-center gap-1.5 text-center text-xs text-muted-foreground">
+				<Icon icon="lucide:headphones" width={14} class="shrink-0" />
+				N'écoute pas la radio ici pendant que tu diffuses : tu t'entendrais en différé
+				(latence de diffusion normale ~10&nbsp;s). Utilise le monitoring de ton système.
+			</p>
 		{/if}
 	</Card>
 

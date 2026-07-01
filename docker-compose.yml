@@ -1,0 +1,47 @@
+# Antenne — full stack for Dokploy (compose deploy).
+# Traefik labels route the public player + API through the Dokploy proxy.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: antenne
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-antenne}
+      POSTGRES_DB: antenne
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://antenne:${DB_PASSWORD:-antenne}@db:5432/antenne?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-*}
+      STORAGE_DIR: /data/tracks
+      STREAM_DIR: /data/stream
+    volumes:
+      - media-data:/data
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL:-/api}
+    environment:
+      PORT: 3000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  media-data:

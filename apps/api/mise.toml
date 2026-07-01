@@ -1,0 +1,30 @@
+[env]
+GOCACHE = "{{config_root}}/.gocache"
+
+[tasks.deps]
+description = "Download Go modules"
+run = "go mod download"
+
+[tasks.dev]
+description = "Run the Antenne API + audio engine"
+run = "go run ./cmd/antenne"
+
+[tasks.build]
+description = "Build the Antenne binary"
+run = "go build -o bin/antenne ./cmd/antenne"
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks.tidy]
+description = "go mod tidy"
+run = "go mod tidy"
+
+[tasks.check]
+description = "Format, vet and test"
+run = [
+  "go fmt ./...",
+  "go vet ./...",
+  "go test ./...",
+]

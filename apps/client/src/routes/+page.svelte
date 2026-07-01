@@ -75,19 +75,47 @@
 		audio.play().catch(() => {});
 	}
 
-	function setupGraph() {
-		if (graphReady) return;
+	function newCtx(): AudioContext {
 		const Ctx =
 			window.AudioContext ||
 			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-		audioCtx = new Ctx();
-		const src = audioCtx.createMediaElementSource(audio);
-		const an = audioCtx.createAnalyser();
+		return new Ctx();
+	}
+
+	// Route the (already-playing) media element through an analyser so the
+	// visualizer reacts to the real audio. Only valid on a RUNNING context.
+	function connectGraph(ctx: AudioContext) {
+		const src = ctx.createMediaElementSource(audio);
+		const an = ctx.createAnalyser();
 		an.fftSize = 512;
 		src.connect(an);
-		an.connect(audioCtx.destination);
+		an.connect(ctx.destination);
+		audioCtx = ctx;
 		analyser = an;
 		graphReady = true;
+	}
+
+	function setupGraph() {
+		if (graphReady) return;
+		connectGraph(newCtx());
+	}
+
+	// Try to wire the analyser WITHOUT a user gesture. On high-media-engagement
+	// origins Chrome lets the AudioContext start/resume running with no gesture,
+	// so the visualizer reacts immediately instead of only after a click. If it
+	// stays suspended we bail (never calling createMediaElementSource, which
+	// would mute the element) and leave it to the first interaction.
+	async function tryGraphNoGesture() {
+		if (graphReady) return;
+		let ctx: AudioContext;
+		try {
+			ctx = newCtx();
+		} catch {
+			return;
+		}
+		if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+		if (ctx.state === 'running') connectGraph(ctx);
+		else ctx.close().catch(() => {});
 	}
 
 	// Build + resume the Web Audio graph. Safe to call repeatedly; must be invoked
@@ -105,10 +133,11 @@
 	// Autoplay can succeed silently (high media-engagement) without the play
 	// button ever being pressed — so the graph is never built and the visualizer
 	// has no analyser data. Build it on the first user interaction anywhere.
+	const GESTURES = ['pointerdown', 'keydown', 'touchstart'] as const;
 	function primeGraph() {
 		ensureGraph();
 		if (graphReady && typeof window !== 'undefined')
-			window.removeEventListener('pointerdown', primeGraph, true);
+			for (const ev of GESTURES) window.removeEventListener(ev, primeGraph, true);
 	}
 
 	// Called from a user gesture (tap/click). Chrome's autoplay policy requires the
@@ -166,8 +195,13 @@
 
 	onMount(() => {
 		attach();
-		tryAutoplay();
-		window.addEventListener('pointerdown', primeGraph, true);
+		(async () => {
+			await tryAutoplay();
+			// If autoplay worked (high engagement), try to wire the analyser now so
+			// the visualizer reacts without needing a click.
+			if (playing) await tryGraphNoGesture();
+		})();
+		for (const ev of GESTURES) window.addEventListener(ev, primeGraph, true);
 		audio.addEventListener('stalled', nudgeLive);
 		refresh();
 		poll = setInterval(refresh, 4000);
@@ -184,7 +218,8 @@
 
 	onDestroy(() => {
 		clearInterval(poll);
-		if (typeof window !== 'undefined') window.removeEventListener('pointerdown', primeGraph, true);
+		if (typeof window !== 'undefined')
+			for (const ev of GESTURES) window.removeEventListener(ev, primeGraph, true);
 		audio?.removeEventListener('stalled', nudgeLive);
 		hls?.destroy();
 		audioCtx?.close();

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { api, getToken, setToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 
 	let username = $state('');
@@ -16,8 +16,7 @@
 		busy = true;
 		error = '';
 		try {
-			const r = await api.login(username, password);
-			setToken(r.token);
+			await api.login(username, password);
 			goto('/admin/live');
 		} catch (err) {
 			error = (err as Error).message;
@@ -27,7 +26,10 @@
 	}
 
 	onMount(() => {
-		if (getToken()) goto('/admin/live');
+		// Already logged in (valid cookie)? Skip the form.
+		api.me()
+			.then(() => goto('/admin/live'))
+			.catch(() => {});
 	});
 </script>
 

@@ -76,9 +76,11 @@ func (s *Server) Router() http.Handler {
 		corsOpts.AllowCredentials = true
 	}
 	r.Use(cors.Handler(corsOpts))
+	r.Use(s.csrfGuard)
 
 	// Public
 	r.With(s.rateLimitLogin).Post("/api/auth/login", s.handleLogin)
+	r.Post("/api/auth/logout", s.handleLogout)
 	r.Get("/api/now-playing", s.handleNowPlaying)
 	r.Get("/api/appearance", s.handleAppearance)
 	r.Get("/api/tracks/{id}/cover", s.handleTrackCover)
@@ -130,6 +132,8 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/api/settings", s.handleGetSettings)
 		r.Put("/api/settings", s.handleUpdateSettings)
+
+		r.Get("/api/auth/me", s.handleMe)
 	})
 
 	// WebSocket mic ingest (authorised inside the handler).
@@ -216,6 +220,28 @@ const maxJSONBody = 4 << 20 // 4 MB
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// csrfGuard is a stateless CSRF defence-in-depth for cookie-authenticated
+// requests: for state-changing methods it rejects browser requests whose Origin
+// does not match the configured client origin. Combined with the SameSite=Strict
+// cookie, this closes the cross-site request forgery vector. Native API clients
+// (which use the Authorization header, not the cookie, and send no Origin) are
+// unaffected, as are safe methods and the wildcard-origin dev setup.
+func (s *Server) csrfGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin != "" && !s.cfg.IsWildcardOrigin() && !strings.EqualFold(origin, s.cfg.ClientOrigin) {
+			writeErr(w, http.StatusForbidden, "cross-origin request blocked")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // secureHeaders sets conservative security response headers. These do not

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
-	import { clearToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
@@ -16,8 +16,9 @@
 		return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
 	}
 
-	function logout() {
-		clearToken();
+	async function logout() {
+		// Clears the HttpOnly cookie server-side (JS can't remove it itself).
+		await api.logout().catch(() => {});
 		goto('/login');
 	}
 </script>

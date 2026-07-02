@@ -9,7 +9,6 @@
 	import TrackCard from '$lib/components/player/TrackCard.svelte';
 	import {
 		api,
-		getToken,
 		chatWsUrl,
 		type NowPlaying,
 		type ChatMessage,
@@ -111,7 +110,9 @@
 			src.connect(an);
 			analyser = an;
 			const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-			ws = new WebSocket(`${proto}://${location.host}/api/live/ingest?token=${getToken()}`);
+			// The HttpOnly auth cookie is sent automatically on the same-origin
+			// handshake — no token in the URL.
+			ws = new WebSocket(`${proto}://${location.host}/api/live/ingest`);
 			ws.binaryType = 'arraybuffer';
 			ws.onopen = () => {
 				const mime = pickRecorderMime();

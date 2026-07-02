@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -74,6 +75,35 @@ func TestSanitizeURIRedactsToken(t *testing.T) {
 	if got := sanitizeURI("/api/now-playing"); got != "/api/now-playing" {
 		t.Fatalf("unexpected rewrite: %q", got)
 	}
+}
+
+func TestCSRFGuard(t *testing.T) {
+	s := &Server{cfg: config.Config{ClientOrigin: "https://radio.example.com"}}
+	h := s.csrfGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	check := func(method, origin string, wildcard bool, wantStatus int) {
+		s.cfg.ClientOrigin = "https://radio.example.com"
+		if wildcard {
+			s.cfg.ClientOrigin = "*"
+		}
+		r := httptest.NewRequest(method, "/api/tracks", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != wantStatus {
+			t.Errorf("%s origin=%q wildcard=%v: got %d want %d", method, origin, wildcard, w.Code, wantStatus)
+		}
+	}
+
+	check(http.MethodGet, "https://evil.example", false, http.StatusOK)         // safe method: allowed
+	check(http.MethodPost, "https://radio.example.com", false, http.StatusOK)   // matching origin: allowed
+	check(http.MethodPost, "https://evil.example", false, http.StatusForbidden) // cross-origin: blocked
+	check(http.MethodPost, "", false, http.StatusOK)                            // no Origin (native client): allowed
+	check(http.MethodPost, "https://evil.example", true, http.StatusOK)         // wildcard/dev: not enforced
 }
 
 func TestValidBackground(t *testing.T) {

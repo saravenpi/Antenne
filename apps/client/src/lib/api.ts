@@ -1,22 +1,9 @@
 import { browser } from '$app/environment';
 
-const TOKEN_KEY = 'antenne_token';
-
-export function getToken(): string | null {
-	return browser ? localStorage.getItem(TOKEN_KEY) : null;
-}
-
-export function setToken(token: string) {
-	if (browser) localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken() {
-	if (browser) localStorage.removeItem(TOKEN_KEY);
-}
-
-export function isAuthed(): boolean {
-	return !!getToken();
-}
+// Authentication is carried by an HttpOnly cookie that the API sets on login.
+// The token is deliberately NOT accessible to JavaScript (this mitigates XSS
+// token theft) and never appears in a URL. Login state is discovered at runtime
+// via `api.me()`, and cleared server-side via `api.logout()`.
 
 // ---- Types ----
 
@@ -106,10 +93,8 @@ export type ChatEvent =
 	| { type: 'error'; error: string };
 
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
-	const headers = new Headers(init.headers);
-	const token = getToken();
-	if (token) headers.set('Authorization', `Bearer ${token}`);
-	const res = await fetch(`/api${path}`, { ...init, headers });
+	// same-origin sends the HttpOnly auth cookie; it is never sent cross-origin.
+	const res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init });
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
 		throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -121,13 +106,15 @@ function jsonBody(method: string, data: unknown): RequestInit {
 	return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
 }
 
-/** WebSocket URL for the live chat. Admins pass their token to receive IPs + mod context. */
+/**
+ * WebSocket URL for the live chat. The HttpOnly auth cookie is sent
+ * automatically on the same-origin handshake, so admins are recognised without
+ * any token in the URL; anonymous visitors simply have no cookie.
+ */
 export function chatWsUrl(): string {
 	if (!browser) return '';
 	const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-	const token = getToken();
-	const q = token ? `?token=${encodeURIComponent(token)}` : '';
-	return `${proto}://${location.host}/api/chat/ws${q}`;
+	return `${proto}://${location.host}/api/chat/ws`;
 }
 
 export const api = {
@@ -136,7 +123,9 @@ export const api = {
 		req<NowPlaying>('/now-playing' + (atMillis ? `?at=${atMillis}` : '')),
 	appearance: () => req<Appearance>('/appearance'),
 	login: (username: string, password: string) =>
-		req<{ token: string; username: string }>('/auth/login', jsonBody('POST', { username, password })),
+		req<{ username: string }>('/auth/login', jsonBody('POST', { username, password })),
+	me: () => req<{ username: string }>('/auth/me'),
+	logout: () => req<void>('/auth/logout', { method: 'POST' }),
 
 	// ---- Tracks / playlist ----
 	tracks: () => req<Track[]>('/tracks'),
@@ -146,10 +135,11 @@ export const api = {
 	async uploadCover(id: string, file: File): Promise<Track> {
 		const form = new FormData();
 		form.set('file', file);
-		const headers = new Headers();
-		const token = getToken();
-		if (token) headers.set('Authorization', `Bearer ${token}`);
-		const res = await fetch(`/api/tracks/${id}/cover`, { method: 'POST', headers, body: form });
+		const res = await fetch(`/api/tracks/${id}/cover`, {
+			method: 'POST',
+			credentials: 'same-origin',
+			body: form
+		});
 		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'upload failed');
 		return res.json();
 	},
@@ -161,10 +151,11 @@ export const api = {
 		form.set('title', title);
 		form.set('artist', artist);
 		if (collectionId) form.set('collectionId', collectionId);
-		const headers = new Headers();
-		const token = getToken();
-		if (token) headers.set('Authorization', `Bearer ${token}`);
-		const res = await fetch('/api/tracks', { method: 'POST', headers, body: form });
+		const res = await fetch('/api/tracks', {
+			method: 'POST',
+			credentials: 'same-origin',
+			body: form
+		});
 		if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'upload failed');
 		return res.json();
 	},

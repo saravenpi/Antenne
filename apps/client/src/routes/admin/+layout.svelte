@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import BottomNav from '$lib/components/BottomNav.svelte';
-	import { getToken } from '$lib/api';
+	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
 
 	let { children } = $props();
@@ -10,11 +10,10 @@
 	let ready = $state(false);
 
 	onMount(() => {
-		if (!getToken()) {
-			goto('/login');
-			return;
-		}
-		ready = true;
+		// The auth cookie is HttpOnly, so confirm the session with the API.
+		api.me()
+			.then(() => (ready = true))
+			.catch(() => goto('/login'));
 	});
 </script>
 

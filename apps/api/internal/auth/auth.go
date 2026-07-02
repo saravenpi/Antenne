@@ -15,6 +15,12 @@ type ctxKey string
 
 const adminIDKey ctxKey = "adminID"
 
+// CookieName is the name of the HttpOnly cookie that carries the admin token.
+const CookieName = "antenne_token"
+
+// tokenTTL is how long an issued token (and its cookie) remains valid.
+const tokenTTL = 7 * 24 * time.Hour
+
 // Service issues and verifies admin JWTs.
 type Service struct {
 	secret []byte
@@ -24,14 +30,42 @@ func New(secret string) *Service {
 	return &Service{secret: []byte(secret)}
 }
 
-// Issue returns a signed JWT for the given admin, valid for 7 days.
+// Issue returns a signed JWT for the given admin, valid for tokenTTL.
 func (s *Service) Issue(adminID uuid.UUID) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Subject:   adminID.String(),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(tokenTTL)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+}
+
+// SetCookie writes the token as a hardened, HttpOnly session cookie. secure must
+// be true in production (HTTPS) so the cookie is never sent over plain HTTP;
+// SameSite=Strict blocks it from cross-site requests (CSRF / CSWSH defence).
+func (s *Service) SetCookie(w http.ResponseWriter, token string, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(tokenTTL.Seconds()),
+	})
+}
+
+// ClearCookie expires the session cookie (logout).
+func (s *Service) ClearCookie(w http.ResponseWriter, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
 }
 
 // Parse validates a token string and returns the admin ID.
@@ -66,14 +100,16 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// fromRequest extracts and validates the token from the Authorization header or,
-// for WebSocket upgrades, the `token` query parameter.
+// fromRequest extracts and validates the token from the Authorization header
+// (for API clients) or the HttpOnly session cookie (for the browser, including
+// same-origin WebSocket handshakes). The token is never read from the URL, so it
+// cannot leak via logs, history, or Referer.
 func (s *Service) fromRequest(r *http.Request) (uuid.UUID, error) {
 	raw := ""
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		raw = strings.TrimPrefix(h, "Bearer ")
-	} else if q := r.URL.Query().Get("token"); q != "" {
-		raw = q
+	} else if c, err := r.Cookie(CookieName); err == nil {
+		raw = c.Value
 	}
 	if raw == "" {
 		return uuid.Nil, errors.New("missing token")

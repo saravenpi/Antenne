@@ -63,6 +63,7 @@ func main() {
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting connections then tear
 	// the engine down so ffmpeg children are killed and reaped (a bare
 	// log.Fatalf/os.Exit would skip that and orphan them).
+	stopped := make(chan struct{})
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -72,6 +73,8 @@ func main() {
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
 		engine.Stop()
+		log.Print("shutdown complete")
+		close(stopped)
 	}()
 
 	log.Printf("Antenne on the air — http://localhost%s", addr)
@@ -79,4 +82,7 @@ func main() {
 		engine.Stop()
 		log.Fatalf("http: %v", err)
 	}
+	// ListenAndServe returned ErrServerClosed (Shutdown was called): wait for the
+	// teardown to finish before exiting, so ffmpeg is reaped, not orphaned.
+	<-stopped
 }

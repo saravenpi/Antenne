@@ -2,15 +2,19 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/gorilla/websocket"
 	"github.com/saravenpi/antenne/internal/audio"
 	"github.com/saravenpi/antenne/internal/auth"
 	"github.com/saravenpi/antenne/internal/clips"
@@ -30,12 +34,20 @@ type Server struct {
 	engine    *audio.Engine
 	chat      *chatHub
 	listeners *listenerTracker
+
+	trustedProxies []*net.IPNet
+	upgrader       websocket.Upgrader
+	loginLimiter   *loginLimiter
 }
 
 func NewServer(cfg config.Config, db *gorm.DB, authSvc *auth.Service, st *store.Store, clipsSvc *clips.Service, engine *audio.Engine) *Server {
 	s := &Server{cfg: cfg, db: db, auth: authSvc, store: st, clips: clipsSvc, engine: engine}
 	s.chat = newChatHub()
 	s.listeners = newListenerTracker()
+	s.trustedProxies = parseTrustedProxies(cfg.TrustedProxies)
+	s.upgrader = s.newUpgrader()
+	// Allow 10 failed login attempts per IP per minute before locking that IP out.
+	s.loginLimiter = newLoginLimiter(10, time.Minute)
 	go s.chat.run()
 	return s
 }
@@ -44,17 +56,29 @@ func NewServer(cfg config.Config, db *gorm.DB, authSvc *auth.Service, st *store.
 // admin-only control plane.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(requestLogger) // redacts ?token= before logging (see sanitizeURI)
 	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{s.cfg.ClientOrigin},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
-		AllowCredentials: true,
-	}))
+	r.Use(secureHeaders)
+
+	// CORS: reflect a concrete origin with credentials, but never combine a
+	// wildcard with credentials (which is both invalid and unsafe). Auth uses a
+	// Bearer header, not cookies, so wildcard-without-credentials is sufficient
+	// for the public endpoints.
+	corsOpts := cors.Options{
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Authorization", "Content-Type"},
+	}
+	if s.cfg.IsWildcardOrigin() {
+		corsOpts.AllowedOrigins = []string{"*"}
+		corsOpts.AllowCredentials = false
+	} else {
+		corsOpts.AllowedOrigins = []string{s.cfg.ClientOrigin}
+		corsOpts.AllowCredentials = true
+	}
+	r.Use(cors.Handler(corsOpts))
 
 	// Public
-	r.Post("/api/auth/login", s.handleLogin)
+	r.With(s.rateLimitLogin).Post("/api/auth/login", s.handleLogin)
 	r.Get("/api/now-playing", s.handleNowPlaying)
 	r.Get("/api/appearance", s.handleAppearance)
 	r.Get("/api/tracks/{id}/cover", s.handleTrackCover)
@@ -156,7 +180,7 @@ func (s *Server) streamHandler() http.Handler {
 	stripped := http.StripPrefix("/stream/", noCache(fs))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".m3u8") {
-			s.listeners.hit(clientIP(r))
+			s.listeners.hit(s.clientIP(r))
 		}
 		stripped.ServeHTTP(w, r)
 	})
@@ -183,14 +207,45 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func decode(r *http.Request, v any) error {
+// maxJSONBody caps the size of a JSON request body. It is generous enough for
+// the largest legitimate payload (appearance settings carry a downscaled 1600px
+// JPEG background as a data URL) while preventing an unbounded body from
+// exhausting memory.
+const maxJSONBody = 4 << 20 // 4 MB
+
+func decode(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
-// clientIP resolves the real client IP behind Cloudflare + Traefik: prefer the
-// CF-Connecting-IP header, else the first hop of X-Forwarded-For, else the
-// RemoteAddr host.
-func clientIP(r *http.Request) string {
+// secureHeaders sets conservative security response headers. These do not
+// restrict resource loading (the client's Content-Security-Policy handles that),
+// so they are safe on every API and stream response.
+func secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// clientIP resolves the real client IP. Forwarded headers (CF-Connecting-IP,
+// X-Forwarded-For) are only honoured when the direct peer (RemoteAddr) is a
+// trusted proxy; otherwise a client could spoof them to evade IP bans,
+// slow-mode, and login rate limiting. When the peer is not trusted we use the
+// raw connection address.
+func (s *Server) clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if !s.trustsProxy(host) {
+		return host
+	}
+	// Behind a trusted proxy: Cloudflare overwrites CF-Connecting-IP with the
+	// real client, so prefer it; else fall back to the first X-Forwarded-For hop.
 	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
 		return cf
 	}
@@ -199,11 +254,119 @@ func clientIP(r *http.Request) string {
 			return first
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
 	return host
+}
+
+// trustsProxy reports whether the given peer address belongs to a trusted proxy
+// network, meaning its forwarding headers may be believed.
+func (s *Server) trustsProxy(host string) bool {
+	ip := net.ParseIP(strings.TrimSpace(host))
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.trustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultTrustedProxyCIDRs are trusted when TRUSTED_PROXIES is unset: loopback
+// plus RFC1918/ULA private ranges. A reverse proxy (Traefik) on the same private
+// Docker network lands here, while direct hits from the public internet do not.
+var defaultTrustedProxyCIDRs = []string{
+	"127.0.0.0/8", "::1/128",
+	"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+	"fc00::/7",
+}
+
+// parseTrustedProxies turns a comma/space-separated list of CIDRs or bare IPs
+// into networks. Empty input yields the private-range defaults. Invalid entries
+// are logged and skipped.
+func parseTrustedProxies(raw string) []*net.IPNet {
+	fields := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+	if len(fields) == 0 {
+		fields = defaultTrustedProxyCIDRs
+	}
+	var nets []*net.IPNet
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if !strings.Contains(f, "/") {
+			if strings.Contains(f, ":") {
+				f += "/128"
+			} else {
+				f += "/32"
+			}
+		}
+		_, n, err := net.ParseCIDR(f)
+		if err != nil {
+			log.Printf("config: ignoring invalid TRUSTED_PROXIES entry %q: %v", f, err)
+			continue
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}
+
+// newUpgrader builds a WebSocket upgrader that enforces same-origin (or the
+// configured CLIENT_ORIGIN), guarding against Cross-Site WebSocket Hijacking.
+// Requests without an Origin header (native players, curl) are allowed since a
+// victim's browser always sends one.
+func (s *Server) newUpgrader() websocket.Upgrader {
+	wildcard := s.cfg.IsWildcardOrigin()
+	return websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			if wildcard {
+				return true
+			}
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+			if strings.EqualFold(u.Host, r.Host) {
+				return true // same-origin
+			}
+			return strings.EqualFold(origin, s.cfg.ClientOrigin)
+		},
+	}
+}
+
+// requestLogger mirrors chi's default request logger but redacts the `token`
+// query parameter, which the WebSocket endpoints accept — otherwise admin JWTs
+// would land in access logs.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		start := time.Now()
+		defer func() {
+			log.Printf("%s %s %d %dB %s",
+				r.Method, sanitizeURI(r.RequestURI), ww.Status(), ww.BytesWritten(), time.Since(start))
+		}()
+		next.ServeHTTP(ww, r)
+	})
+}
+
+// sanitizeURI redacts the value of a `token` query parameter so JWTs never reach
+// the logs.
+func sanitizeURI(uri string) string {
+	u, err := url.ParseRequestURI(uri)
+	if err != nil {
+		return uri
+	}
+	q := u.Query()
+	if q.Has("token") {
+		q.Set("token", "REDACTED")
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
 }
 
 // sortItemsByPosition is used when returning the playlist to the admin UI.

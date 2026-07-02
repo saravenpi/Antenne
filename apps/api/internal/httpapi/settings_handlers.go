@@ -73,10 +73,32 @@ type updateSettingsReq struct {
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req updateSettingsReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
+
+	// Reject values that could turn admin-controlled appearance fields into an
+	// injection vector: CSS that loads remote/script resources, and hrefs with
+	// dangerous URL schemes. These are admin-only fields, so this is
+	// defence-in-depth rather than a direct trust boundary.
+	if req.Background != nil && !validBackground(*req.Background) {
+		writeErr(w, http.StatusBadRequest, "invalid background value")
+		return
+	}
+	if req.Logo != nil && !validImageRef(*req.Logo) {
+		writeErr(w, http.StatusBadRequest, "invalid logo value")
+		return
+	}
+	if req.Socials != nil {
+		for _, l := range *req.Socials {
+			if l.URL != "" && !validLinkURL(l.URL) {
+				writeErr(w, http.StatusBadRequest, "invalid social link URL")
+				return
+			}
+		}
+	}
+
 	st := s.loadSettings()
 	if st.ID == 0 {
 		if err := s.db.First(&st).Error; err != nil && !db.IsNotFound(err) {
@@ -108,4 +130,58 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toSettingsJSON(st))
+}
+
+// --- appearance value validation ---
+
+// dangerousCSS are substrings that must never appear in the inline `background`
+// CSS the listener page renders (style="background: <value>").
+var dangerousCSS = []string{"javascript:", "expression(", "@import", "</", "<", "\\"}
+
+// validBackground allows plain colours/gradients and inline data:image
+// backgrounds, but rejects anything that would break out of the style attribute
+// or load a remote/script resource. An empty value clears the background.
+func validBackground(s string) bool {
+	l := strings.ToLower(strings.TrimSpace(s))
+	if l == "" {
+		return true
+	}
+	for _, bad := range dangerousCSS {
+		if strings.Contains(l, bad) {
+			return false
+		}
+	}
+	// Every url(...) must reference an inline data:image, never a remote origin.
+	rest := l
+	for {
+		idx := strings.Index(rest, "url(")
+		if idx < 0 {
+			break
+		}
+		arg := strings.TrimLeft(rest[idx+4:], " '\"")
+		if !strings.HasPrefix(arg, "data:image/") {
+			return false
+		}
+		rest = rest[idx+4:]
+	}
+	return true
+}
+
+// validImageRef allows an empty value, an inline data:image, or an http(s) URL —
+// used for the logo, which is rendered as an <img> source.
+func validImageRef(s string) bool {
+	l := strings.ToLower(strings.TrimSpace(s))
+	return l == "" ||
+		strings.HasPrefix(l, "data:image/") ||
+		strings.HasPrefix(l, "https://") ||
+		strings.HasPrefix(l, "http://")
+}
+
+// validLinkURL restricts social link hrefs to safe schemes, blocking
+// javascript:/data: and other script-bearing URLs.
+func validLinkURL(s string) bool {
+	l := strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(l, "https://") ||
+		strings.HasPrefix(l, "http://") ||
+		strings.HasPrefix(l, "mailto:")
 }

@@ -38,7 +38,7 @@ type createClipReq struct {
 
 func (s *Server) handleCreateClip(w http.ResponseWriter, r *http.Request) {
 	var req createClipReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}

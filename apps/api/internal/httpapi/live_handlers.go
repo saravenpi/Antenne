@@ -8,10 +8,6 @@ import (
 
 // --- Live broadcast ---
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 // handleLiveIngest upgrades to a WebSocket, authorises via the `token` query
 // param, then streams the admin's encoded mic chunks into the live source.
 func (s *Server) handleLiveIngest(w http.ResponseWriter, r *http.Request) {
@@ -19,7 +15,7 @@ func (s *Server) handleLiveIngest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

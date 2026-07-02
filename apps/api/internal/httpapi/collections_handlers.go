@@ -26,7 +26,7 @@ func (s *Server) handleListCollections(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
 	var req collectionReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -52,7 +52,7 @@ func (s *Server) handleRenameCollection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req collectionReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -121,7 +121,7 @@ func (s *Server) handleMoveTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req moveTrackReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}

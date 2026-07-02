@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,30 @@ import (
 	"github.com/saravenpi/antenne/internal/db"
 	"github.com/saravenpi/antenne/internal/models"
 )
+
+// audioExts is the allowlist of extensions accepted for track uploads. It keeps
+// arbitrary file types out of the media store; ffmpeg still validates the
+// contents downstream.
+var audioExts = map[string]bool{
+	".mp3": true, ".flac": true, ".wav": true, ".ogg": true, ".oga": true,
+	".opus": true, ".m4a": true, ".mp4": true, ".aac": true, ".wma": true,
+	".aiff": true, ".aif": true, ".alac": true, ".webm": true, ".mkv": true,
+}
+
+func allowedAudioExt(name string) bool {
+	return audioExts[strings.ToLower(filepath.Ext(name))]
+}
+
+// looksLikeImage sniffs the first bytes of an upload and reports whether they
+// are an image, rewinding the reader so the caller can still store the file.
+func looksLikeImage(f io.ReadSeeker) bool {
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return false
+	}
+	return strings.HasPrefix(http.DetectContentType(buf[:n]), "image/")
+}
 
 // trackCoverURL builds the public cover URL for a track, or "" when it has no
 // art. It appends a short version token derived from the cover filename so that
@@ -79,6 +104,11 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	if !allowedAudioExt(header.Filename) {
+		writeErr(w, http.StatusBadRequest, "unsupported audio format")
+		return
+	}
+
 	filename, err := s.store.Save(file, header.Filename)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not store file")
@@ -147,7 +177,7 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req updateTrackReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -213,6 +243,11 @@ func (s *Server) handleUploadCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	if !looksLikeImage(file) {
+		writeErr(w, http.StatusBadRequest, "cover must be an image")
+		return
+	}
 
 	name := header.Filename
 	if filepath.Ext(name) == "" {
@@ -309,7 +344,7 @@ type reorderReq struct {
 
 func (s *Server) handleReorderPlaylist(w http.ResponseWriter, r *http.Request) {
 	var req reorderReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}

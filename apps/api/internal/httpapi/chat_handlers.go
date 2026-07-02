@@ -33,7 +33,7 @@ func (s *Server) handleChatWS(w http.ResponseWriter, r *http.Request) {
 		isAdmin = true
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -41,7 +41,7 @@ func (s *Server) handleChatWS(w http.ResponseWriter, r *http.Request) {
 	client := &chatClient{
 		conn:    conn,
 		isAdmin: isAdmin,
-		ip:      clientIP(r),
+		ip:      s.clientIP(r),
 		send:    make(chan []byte, chatSendBuffer),
 	}
 	s.chat.register <- client
@@ -264,7 +264,7 @@ func (s *Server) handleListBans(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateBan(w http.ResponseWriter, r *http.Request) {
 	var req ipReasonReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -320,7 +320,7 @@ func (s *Server) handleListRestrictions(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleCreateRestriction(w http.ResponseWriter, r *http.Request) {
 	var req ipReasonReq
-	if err := decode(r, &req); err != nil {
+	if err := decode(w, r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}

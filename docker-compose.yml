@@ -8,6 +8,10 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: antenne
+      # Strongly recommended: set DB_PASSWORD to a strong value. It is only applied
+      # when the volume is first initialised — set it before the first deploy
+      # (changing it later requires recreating the db-data volume). The DB is not
+      # published to the host; it is only reachable on the internal network.
       POSTGRES_PASSWORD: ${DB_PASSWORD:-antenne}
       POSTGRES_DB: antenne
     volumes:
@@ -21,12 +25,21 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
+      # Production mode: the API refuses to boot on default/weak secrets or a
+      # wildcard CORS origin (see config.Validate).
+      ANTENNE_ENV: ${ANTENNE_ENV:-production}
       PORT: 4000
       DATABASE_URL: postgres://antenne:${DB_PASSWORD:-antenne}@antenne-db:5432/antenne?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-change-me}
+      # Required — compose refuses to start until these are set. Generate the
+      # secret with e.g. `openssl rand -hex 32`.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a strong random value (openssl rand -hex 32)}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
-      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-*}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD to a strong password}
+      # Explicit public origin, e.g. https://radio.example.com — no wildcard in prod.
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:?set CLIENT_ORIGIN to your public site origin}
+      # Optional: CIDRs/IPs of trusted reverse proxies. Empty = loopback + private
+      # ranges (Traefik on the shared Docker network is covered by default).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       STORAGE_DIR: /data/tracks
       STREAM_DIR: /data/stream
       # Continuous MP3 broadcast (ICY/Icecast-style) for external players.

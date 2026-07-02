@@ -22,6 +22,14 @@ import (
 func main() {
 	cfg := config.Load()
 
+	warnings, err := cfg.Validate()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	for _, w := range warnings {
+		log.Printf("⚠ config: %s", w)
+	}
+
 	database, err := db.Open(cfg)
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -58,7 +66,16 @@ func main() {
 	}
 
 	addr := ":" + cfg.Port
-	httpSrv := &http.Server{Addr: addr, Handler: srv.Router()}
+	httpSrv := &http.Server{
+		Addr:    addr,
+		Handler: srv.Router(),
+		// Bound how long a client may take to send request headers — this is the
+		// key defence against Slowloris. ReadTimeout/WriteTimeout are intentionally
+		// left unset: uploads (up to 512 MB) and the long-lived HLS/MP3 streams
+		// would otherwise be cut off mid-transfer.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting connections then tear
 	// the engine down so ffmpeg children are killed and reaped (a bare

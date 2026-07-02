@@ -68,7 +68,7 @@ func (s *Server) handleMP3Stream(w http.ResponseWriter, r *http.Request) {
 	ch, burst, cancel := enc.Bcast.Subscribe()
 	defer cancel()
 
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	s.listeners.hit(ip)
 	lastPing := time.Now()
 

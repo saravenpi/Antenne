@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"net/http"
@@ -75,21 +74,21 @@ func (s *Server) handleMP3Stream(w http.ResponseWriter, r *http.Request) {
 
 	iw := &icyWriter{w: brw.Writer, wantMeta: wantMeta, metaInt: s.icyMetaInt(), meta: s.currentStreamTitle}
 
-	// Burst-on-connect: replay recent bytes so the player starts audio at once.
-	writeDeadline()
-	if _, err := iw.Write(burst); err != nil {
-		return
-	}
-	if err := brw.Flush(); err != nil {
-		return
+	// Burst-on-connect: replay recent bytes so the player starts audio at once,
+	// then pump live chunks until the client disconnects (a write error).
+	send := func(p []byte) error {
+		writeDeadline()
+		if _, err := iw.Write(p); err != nil {
+			return err
+		}
+		return brw.Flush()
 	}
 
+	if err := send(burst); err != nil {
+		return
+	}
 	for chunk := range ch {
-		writeDeadline()
-		if _, err := iw.Write(chunk); err != nil {
-			return
-		}
-		if err := brw.Flush(); err != nil {
+		if err := send(chunk); err != nil {
 			return
 		}
 		if now := time.Now(); now.Sub(lastPing) >= listenerPingEvery {
@@ -106,41 +105,49 @@ func (s *Server) handleMP3StreamHead(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "mp3 stream disabled")
 		return
 	}
-	h := w.Header()
-	h.Set("Content-Type", "audio/mpeg")
-	h.Set("Cache-Control", "no-cache, no-store")
-	h.Set("Access-Control-Allow-Origin", "*")
-	h.Set("icy-name", headerSafe(s.cfg.StationName))
-	h.Set("icy-genre", headerSafe(s.cfg.StationGenre))
-	h.Set("icy-br", strconv.Itoa(s.cfg.MP3BitrateK))
-	h.Set("icy-pub", s.icyPub())
-	if s.cfg.StationURL != "" {
-		h.Set("icy-url", headerSafe(s.cfg.StationURL))
+	for _, kv := range s.icyHeaders(0) { // 0: no body, so no icy-metaint
+		w.Header().Set(kv[0], kv[1])
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// icyHeaders returns the response headers shared by the GET stream and HEAD
+// probe, in wire order, so the two can never drift. metaInt > 0 appends
+// icy-metaint (only the metadata-negotiated GET body carries it).
+func (s *Server) icyHeaders(metaInt int) [][2]string {
+	h := [][2]string{
+		{"Content-Type", "audio/mpeg"},
+		{"Cache-Control", "no-cache, no-store"},
+		{"Access-Control-Allow-Origin", "*"},
+		{"Server", "Antenne"},
+		{"icy-name", headerSafe(s.cfg.StationName)},
+		{"icy-genre", headerSafe(s.cfg.StationGenre)},
+		{"icy-br", strconv.Itoa(s.cfg.MP3BitrateK)},
+		{"icy-pub", s.icyPub()},
+	}
+	if s.cfg.StationURL != "" {
+		h = append(h, [2]string{"icy-url", headerSafe(s.cfg.StationURL)})
+	}
+	if s.cfg.StationDesc != "" {
+		h = append(h, [2]string{"icy-description", headerSafe(s.cfg.StationDesc)})
+	}
+	if metaInt > 0 {
+		h = append(h, [2]string{"icy-metaint", strconv.Itoa(metaInt)})
+	}
+	return h
 }
 
 // mp3ResponseHead builds the raw ICY response header block for the hijacked
 // connection. Icy-metaint is echoed only when the client opted into metadata.
 func (s *Server) mp3ResponseHead(wantMeta bool) string {
+	metaInt := 0
+	if wantMeta {
+		metaInt = s.icyMetaInt()
+	}
 	var b strings.Builder
 	b.WriteString("HTTP/1.0 200 OK\r\n")
-	b.WriteString("Content-Type: audio/mpeg\r\n")
-	b.WriteString("Cache-Control: no-cache, no-store\r\n")
-	b.WriteString("Access-Control-Allow-Origin: *\r\n")
-	b.WriteString("Server: Antenne\r\n")
-	b.WriteString("icy-name: " + headerSafe(s.cfg.StationName) + "\r\n")
-	b.WriteString("icy-genre: " + headerSafe(s.cfg.StationGenre) + "\r\n")
-	b.WriteString("icy-br: " + strconv.Itoa(s.cfg.MP3BitrateK) + "\r\n")
-	b.WriteString("icy-pub: " + s.icyPub() + "\r\n")
-	if s.cfg.StationURL != "" {
-		b.WriteString("icy-url: " + headerSafe(s.cfg.StationURL) + "\r\n")
-	}
-	if s.cfg.StationDesc != "" {
-		b.WriteString("icy-description: " + headerSafe(s.cfg.StationDesc) + "\r\n")
-	}
-	if wantMeta {
-		b.WriteString("icy-metaint: " + strconv.Itoa(s.icyMetaInt()) + "\r\n")
+	for _, kv := range s.icyHeaders(metaInt) {
+		b.WriteString(kv[0] + ": " + kv[1] + "\r\n")
 	}
 	b.WriteString("Connection: close\r\n")
 	b.WriteString("\r\n")
@@ -195,79 +202,6 @@ func (s *Server) currentStreamTitle() string {
 	default:
 		return s.cfg.StationName
 	}
-}
-
-// icyWriter wraps the raw socket and, when the client asked for metadata,
-// interleaves an ICY metadata block after every metaInt bytes of audio.
-type icyWriter struct {
-	w        *bufio.Writer
-	wantMeta bool
-	metaInt  int
-	meta     func() string
-
-	sinceMeta int
-	lastMeta  string
-	started   bool // ensures the first boundary always transmits the title
-}
-
-// Write forwards audio bytes, splitting at metadata boundaries when metadata is
-// enabled. It always reports len(p) written on success so callers see a normal
-// io.Writer (the injected metadata bytes are invisible to them).
-func (iw *icyWriter) Write(p []byte) (int, error) {
-	if !iw.wantMeta {
-		return iw.w.Write(p)
-	}
-	total := 0
-	for len(p) > 0 {
-		n := iw.metaInt - iw.sinceMeta
-		if n > len(p) {
-			n = len(p)
-		}
-		if _, err := iw.w.Write(p[:n]); err != nil {
-			return total, err
-		}
-		total += n
-		iw.sinceMeta += n
-		p = p[n:]
-		if iw.sinceMeta == iw.metaInt {
-			if err := iw.writeMetaBlock(); err != nil {
-				return total, err
-			}
-			iw.sinceMeta = 0
-		}
-	}
-	return total, nil
-}
-
-// writeMetaBlock emits one ICY metadata segment: a length byte (in 16-byte
-// units) followed by the padded payload. When the title is unchanged we emit a
-// single zero byte, as the protocol prescribes, to avoid re-sending it.
-func (iw *icyWriter) writeMetaBlock() error {
-	title := iw.meta()
-	if iw.started && title == iw.lastMeta {
-		return iw.w.WriteByte(0)
-	}
-	iw.started = true
-	iw.lastMeta = title
-
-	payload := "StreamTitle='" + icyEscape(title) + "';"
-	blocks := (len(payload) + 15) / 16
-	if blocks > 255 { // length byte is a single byte; clamp defensively
-		blocks = 255
-		payload = payload[:255*16]
-	}
-	buf := make([]byte, 1+blocks*16)
-	buf[0] = byte(blocks)
-	copy(buf[1:], payload)
-	_, err := iw.w.Write(buf)
-	return err
-}
-
-// icyEscape strips the characters that would break the StreamTitle='...';
-// framing. The ICY protocol defines no escaping, so removal is the only correct
-// option — a raw quote or semicolon in a title corrupts the block for parsers.
-func icyEscape(s string) string {
-	return strings.NewReplacer("'", "", ";", " ", "\r", " ", "\n", " ").Replace(s)
 }
 
 // headerSafe removes CR/LF to prevent header injection via station/title config.

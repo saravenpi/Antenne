@@ -58,6 +58,19 @@ services:
     networks:
       - dokploy-network
     restart: unless-stopped
+    # Traefik: the client owns the domain (bound via the Dokploy UI), but the API
+    # and stream live on the same host under /api and /stream. Without this router
+    # those paths fall through to the client and 404 (login, now-playing, audio).
+    # Higher priority than the client's Host-only rule so the prefixes win. No
+    # certResolver: reuse the SNI cert the client router already provisioned.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.antenne-api.rule=Host(`${ANTENNE_DOMAIN:-antenne.facile.studio}`) && (PathPrefix(`/api`) || PathPrefix(`/stream`))
+      - traefik.http.routers.antenne-api.entryPoints=websecure
+      - traefik.http.routers.antenne-api.tls=true
+      - traefik.http.routers.antenne-api.priority=100
+      - traefik.http.services.antenne-api.loadbalancer.server.port=4000
 
   antenne-client:
     build:

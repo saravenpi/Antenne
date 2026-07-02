@@ -633,7 +633,7 @@
 		<input
 			bind:this={fileInput}
 			type="file"
-			accept="audio/*"
+			accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac"
 			multiple
 			class="hidden"
 			onchange={onSelect}

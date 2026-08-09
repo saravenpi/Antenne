@@ -119,7 +119,7 @@ func (s *Server) icyHeaders(metaInt int) [][2]string {
 		{"Content-Type", "audio/mpeg"},
 		{"Cache-Control", "no-cache, no-store"},
 		{"Access-Control-Allow-Origin", "*"},
-		{"Server", "Antenne"},
+		{"Server", "Poste"},
 		{"icy-name", headerSafe(s.cfg.StationName)},
 		{"icy-genre", headerSafe(s.cfg.StationGenre)},
 		{"icy-br", strconv.Itoa(s.cfg.MP3BitrateK)},

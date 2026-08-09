@@ -1,8 +1,8 @@
-# Antenne 📡
+# Poste 📡
 
 Déploie une web radio en quelques minutes.
 
-**Antenne** lance une radio en ligne à partir d'un seul binaire :
+**Poste** lance une radio en ligne à partir d'un seul binaire :
 
 - 🎙️ **Prise d'antenne en direct** — l'admin prend le micro depuis le navigateur et passe en live par-dessus la musique.
 - 🎵 **Diffusion 24/7** — une playlist de fichiers uploadés tourne en boucle en continu, avec crossfade.
@@ -31,11 +31,11 @@ Le player public est sur `http://localhost:5173`, la console admin sur `http://l
 
 ## Concept
 
-Une radio, c'est deux flux : de la musique qui tourne tout le temps, et une voix qui prend l'antenne quand elle le veut. Antenne fait tourner une playlist en boucle et laisse l'admin basculer en direct d'un clic ; les auditeurs écoutent un seul flux continu.
+Une radio, c'est deux flux : de la musique qui tourne tout le temps, et une voix qui prend l'antenne quand elle le veut. Poste fait tourner une playlist en boucle et laisse l'admin basculer en direct d'un clic ; les auditeurs écoutent un seul flux continu.
 
-## Intégrer Antenne ailleurs
+## Intégrer Poste ailleurs
 
-Antenne expose sa diffusion selon les conventions webradio (ICY/Icecast), donc n'importe quel lecteur ou annuaire peut s'y brancher.
+Poste expose sa diffusion selon les conventions webradio (ICY/Icecast), donc n'importe quel lecteur ou annuaire peut s'y brancher.
 
 | Ressource | URL | Content-Type |
 |---|---|---|

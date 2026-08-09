@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/saravenpi/antenne/internal/db"
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/db"
+	"github.com/saravenpi/poste/internal/models"
 )
 
 // audioExts is the allowlist of extensions accepted for track uploads. It keeps

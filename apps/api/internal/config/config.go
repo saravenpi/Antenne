@@ -53,7 +53,7 @@ func Load() Config {
 	_ = godotenv.Load()
 
 	c := Config{
-		Env:            env("ANTENNE_ENV", "development"),
+		Env:            firstEnv("POSTE_ENV", "ANTENNE_ENV", "development"),
 		Port:           env("PORT", "4000"),
 		ClientOrigin:   env("CLIENT_ORIGIN", "http://localhost:5173"),
 		TrustedProxies: env("TRUSTED_PROXIES", ""),
@@ -71,7 +71,7 @@ func Load() Config {
 		MP3Enabled:     envBool("MP3_STREAM_ENABLED", true),
 		MP3BitrateK:    envInt("MP3_BITRATE_K", 128),
 		ICYMetaInt:     envInt("ICY_METAINT", 16000),
-		StationName:    env("STATION_NAME", "Antenne"),
+		StationName:    env("STATION_NAME", "Poste"),
 		StationGenre:   env("STATION_GENRE", "Various"),
 		StationURL:     env("STATION_URL", ""),
 		StationDesc:    env("STATION_DESCRIPTION", ""),
@@ -140,6 +140,17 @@ func (c Config) Validate() (warnings []string, err error) {
 		warnings = append(warnings, "CLIENT_ORIGIN is empty or \"*\" — CORS credentials are disabled and any origin is allowed")
 	}
 	return warnings, nil
+}
+
+// firstEnv reads the first key that is set, so a rename of an environment
+// variable cannot silently change behaviour. ANTENNE_ENV is the pre-rename name
+// and its absence would otherwise fall through to "development", which is the
+// mode that stops refusing weak secrets and a wildcard CORS origin.
+func firstEnv(key, legacy, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return env(legacy, fallback)
 }
 
 func env(key, fallback string) string {

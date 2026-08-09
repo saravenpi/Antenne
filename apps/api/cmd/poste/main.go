@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/saravenpi/antenne/internal/audio"
-	"github.com/saravenpi/antenne/internal/auth"
-	"github.com/saravenpi/antenne/internal/clips"
-	"github.com/saravenpi/antenne/internal/config"
-	"github.com/saravenpi/antenne/internal/db"
-	"github.com/saravenpi/antenne/internal/httpapi"
-	"github.com/saravenpi/antenne/internal/store"
+	"github.com/saravenpi/poste/internal/audio"
+	"github.com/saravenpi/poste/internal/auth"
+	"github.com/saravenpi/poste/internal/clips"
+	"github.com/saravenpi/poste/internal/config"
+	"github.com/saravenpi/poste/internal/db"
+	"github.com/saravenpi/poste/internal/httpapi"
+	"github.com/saravenpi/poste/internal/store"
 )
 
 func main() {
@@ -94,7 +94,7 @@ func main() {
 		close(stopped)
 	}()
 
-	log.Printf("Antenne on the air — http://localhost%s", addr)
+	log.Printf("Poste on the air — http://localhost%s", addr)
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		engine.Stop()
 		log.Fatalf("http: %v", err)

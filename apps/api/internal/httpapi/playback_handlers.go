@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/models"
 )
 
 // --- Now playing (public) ---

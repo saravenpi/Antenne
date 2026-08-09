@@ -7,9 +7,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/saravenpi/antenne/internal/audio"
-	"github.com/saravenpi/antenne/internal/db"
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/audio"
+	"github.com/saravenpi/poste/internal/db"
+	"github.com/saravenpi/poste/internal/models"
 )
 
 // clipJSON is the API representation of a Clip, adding the public audio URL.

@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 

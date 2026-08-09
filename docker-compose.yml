@@ -1,12 +1,17 @@
-# Antenne — full stack for Dokploy (compose deploy).
+# Poste — full stack for Dokploy (compose deploy).
 # All services join the shared external `dokploy-network` instead of a
 # per-stack network: the server's Docker address pool is exhausted, and
 # Traefik (on dokploy-network) needs to reach the client to route the domain.
 # Service names are prefixed to avoid DNS collisions on the shared network.
 services:
-  antenne-db:
+  poste-db:
     image: postgres:16-alpine
     environment:
+      # The role and the database keep the name they were created with. Postgres
+      # only honours POSTGRES_USER/POSTGRES_DB when it initialises an empty data
+      # directory, so renaming them here would not rename anything — it would
+      # point the API at a role and a database that do not exist. They are
+      # deliberately out of step with the service name.
       POSTGRES_USER: antenne
       # Strongly recommended: set DB_PASSWORD to a strong value. It is only applied
       # when the volume is first initialised — set it before the first deploy
@@ -20,16 +25,16 @@ services:
       - dokploy-network
     restart: unless-stopped
 
-  antenne-api:
+  poste-api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
       # Production mode: the API refuses to boot on default/weak secrets or a
       # wildcard CORS origin (see config.Validate).
-      ANTENNE_ENV: ${ANTENNE_ENV:-production}
+      POSTE_ENV: ${POSTE_ENV:-production}
       PORT: 4000
-      DATABASE_URL: postgres://antenne:${DB_PASSWORD:-antenne}@antenne-db:5432/antenne?sslmode=disable
+      DATABASE_URL: postgres://antenne:${DB_PASSWORD:-antenne}@poste-db:5432/antenne?sslmode=disable
       # Required — compose refuses to start until these are set. Generate the
       # secret with e.g. `openssl rand -hex 32`.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a strong random value (openssl rand -hex 32)}
@@ -46,7 +51,7 @@ services:
       MP3_STREAM_ENABLED: ${MP3_STREAM_ENABLED:-true}
       MP3_BITRATE_K: ${MP3_BITRATE_K:-128}
       ICY_METAINT: ${ICY_METAINT:-16000}
-      STATION_NAME: ${STATION_NAME:-Antenne}
+      STATION_NAME: ${STATION_NAME:-Poste}
       STATION_GENRE: ${STATION_GENRE:-Various}
       STATION_URL: ${STATION_URL:-}
       STATION_DESCRIPTION: ${STATION_DESCRIPTION:-}
@@ -54,7 +59,7 @@ services:
     volumes:
       - media-data:/data
     depends_on:
-      - antenne-db
+      - poste-db
     networks:
       - dokploy-network
     restart: unless-stopped
@@ -66,13 +71,13 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.antenne-api.rule=Host(`${ANTENNE_DOMAIN:-antenne.facile.studio}`) && (PathPrefix(`/api`) || PathPrefix(`/stream`))
-      - traefik.http.routers.antenne-api.entryPoints=websecure
-      - traefik.http.routers.antenne-api.tls=true
-      - traefik.http.routers.antenne-api.priority=100
-      - traefik.http.services.antenne-api.loadbalancer.server.port=4000
+      - traefik.http.routers.poste-api.rule=Host(`${POSTE_DOMAIN:?set POSTE_DOMAIN to the public host, e.g. fm.example.com}`) && (PathPrefix(`/api`) || PathPrefix(`/stream`))
+      - traefik.http.routers.poste-api.entryPoints=websecure
+      - traefik.http.routers.poste-api.tls=true
+      - traefik.http.routers.poste-api.priority=100
+      - traefik.http.services.poste-api.loadbalancer.server.port=4000
 
-  antenne-client:
+  poste-client:
     build:
       context: .
       dockerfile: apps/client/Dockerfile
@@ -81,7 +86,7 @@ services:
     environment:
       PORT: 3000
     depends_on:
-      - antenne-api
+      - poste-api
     networks:
       - dokploy-network
     restart: unless-stopped

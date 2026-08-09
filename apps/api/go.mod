@@ -1,4 +1,4 @@
-module github.com/saravenpi/antenne
+module github.com/saravenpi/poste
 
 go 1.24
 

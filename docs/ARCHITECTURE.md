@@ -1,6 +1,6 @@
-# Architecture — Antenne
+# Architecture — Poste
 
-Antenne est un **binaire Go unique** qui fait tourner une web radio mono-station.
+Poste est un **binaire Go unique** qui fait tourner une web radio mono-station.
 Aucun Icecast ni Liquidsoap : le Go orchestre tout et n'utilise `ffmpeg` que comme
 sous-process de **décodage / encodage** (le seul binaire externe requis).
 

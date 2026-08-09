@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/saravenpi/antenne/internal/config"
+	"github.com/saravenpi/poste/internal/config"
 )
 
 func TestClientIPIgnoresSpoofedHeadersFromUntrustedPeer(t *testing.T) {

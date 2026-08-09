@@ -4,8 +4,8 @@ import (
 	"errors"
 	"log"
 
-	"github.com/saravenpi/antenne/internal/config"
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/config"
+	"github.com/saravenpi/poste/internal/models"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -47,7 +47,7 @@ func seedSettings(gdb *gorm.DB) error {
 	if count > 0 {
 		return nil
 	}
-	return gdb.Create(&models.Settings{StationName: "Antenne", CrossfadeMs: 2000, SlowModeSec: 2}).Error
+	return gdb.Create(&models.Settings{StationName: "Poste", CrossfadeMs: 2000, SlowModeSec: 2}).Error
 }
 
 func seedAdmin(gdb *gorm.DB, cfg config.Config) error {

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/saravenpi/antenne/internal/db"
-	"github.com/saravenpi/antenne/internal/models"
+	"github.com/saravenpi/poste/internal/db"
+	"github.com/saravenpi/poste/internal/models"
 )
 
 // --- REST: settings ---
